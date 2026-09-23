@@ -171,13 +171,50 @@ function renderBusiness() {
   $('load-demo').textContent = tasks.some(t => t.demo) ? 'Демо-задачи загружены' : 'Загрузить демо-задачи';
   $('business-tasks').innerHTML = tasks.length ? tasks.map(t => `<article class="task-item"><div class="task-top"><span class="state-badge ${t.status}">${statusLabels[t.status]}</span>${t.demo ? '<span class="demo-tag">ДЕМО-ПРИМЕР</span>' : ''}</div><h3>${esc(t.title)}</h3><p>${esc(t.description)}</p><div class="task-meta"><span>Рейтинг: <strong>${Number.isFinite(t.score) ? `${t.score}/100` : 'ещё не рассчитан'}</strong></span><span>Откликов: <strong>${t.responses.length}</strong></span></div><div class="task-actions"><a class="small-button" href="#edit/${encodeURIComponent(t.id)}">Редактировать</a><a class="small-button" href="#responses/${encodeURIComponent(t.id)}">Посмотреть отклики (${t.responses.length})</a></div></article>`).join('') : `${empty('Пока нет задач','Создайте первый черновик или загрузите демо-примеры, чтобы посмотреть кабинет.')}<p><a class="small-button" href="#draft">+ Создать задачу</a></p>`;
 }
+// Local demo adapter. The business-logic owner can replace this with an API call.
+function setProposalDecision(task,index,decision) {
+ if (!['pending','accepted','rejected'].includes(decision) || !task.responses[index]) return false;
+ const proposal = task.responses[index];
+ const previousStatus = proposal.status;
+ const previousTime = proposal.decidedAt;
+ proposal.status = decision;
+ proposal.decidedAt = decision === 'pending' ? null : new Date().toISOString();
+ if (!save()) { proposal.status = previousStatus; proposal.decidedAt = previousTime; return false; }
+ return true;
+}
 function responses(task) {
- const labels = {pending:'На рассмотрении',accepted:'Выбрано',rejected:'Отклонено'};
- $('detail-content').innerHTML = `<p class="eyebrow">ПРЕДЛОЖЕНИЯ КОМАНД</p><h1 class="responses-heading" tabindex="-1">Отклики на задачу</h1><p class="dashboard-subtitle">${esc(task.title)}</p>${task.responses.length ? `<div class="task-list">${task.responses.map(r => `<article class="task-item"><span class="state-badge pending">${labels[r.status] || 'На рассмотрении'}</span><h3>${esc(r.team)}</h3><p><strong>Идея решения</strong><br>${esc(r.idea)}</p><p><strong>Краткий план</strong><br>${esc(r.plan)}</p><p><strong>Предполагаемый срок</strong><br>${esc(r.deadline) || 'Не указан'}</p><p><strong>Прототип</strong><br>${validLink(r.link) ? `<a class="proposal-link" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.link)} ↗</a>` : 'Не указан'}</p></article>`).join('')}</div>` : empty('Откликов пока нет','Когда команды отправят предложения, они появятся здесь.')}`;
+ const labels = {pending:'На рассмотрении',accepted:'Принято',rejected:'Отклонено'};
+ const statusOf = response => labels[response.status] ? response.status : 'pending';
+ const counts = {pending:0,accepted:0,rejected:0};
+ task.responses.forEach(response => counts[statusOf(response)]++);
+ $('detail-content').innerHTML = `<div class="response-page-heading"><div><p class="eyebrow">РЕШЕНИЕ ПРИНИМАЕТ БИЗНЕС</p><h1 class="responses-heading" tabindex="-1">Предложения команд</h1><p class="dashboard-subtitle">${esc(task.title)}</p></div>${task.publishedCard || task.status === 'published' ? `<a class="small-button" href="#task/${encodeURIComponent(task.id)}">Посмотреть задачу ↗</a>` : ''}</div><div class="decision-summary"><div><strong>${task.responses.length}</strong><span>Всего предложений</span></div><div><strong>${counts.pending}</strong><span>На рассмотрении</span></div><div><strong>${counts.accepted}</strong><span>Принято</span></div><div><strong>${counts.rejected}</strong><span>Отклонено</span></div></div><p class="decision-hint">Можно принять одну или несколько команд, отклонить все предложения или вернуться к решению позже. Статус меняется только по вашему нажатию.</p><p id="decision-error" class="form-error" role="alert"></p><div id="decision-list" class="task-list">${task.responses.length ? task.responses.map((r,index) => {const status = statusOf(r);return `<article class="task-item proposal-review"><div class="review-top"><div><span class="eyebrow">ПРЕДЛОЖЕНИЕ ${String(index+1).padStart(2,'0')}</span><h2>${esc(r.team)}</h2></div><span class="state-badge ${status}">${labels[status]}</span></div><div class="review-content"><section><h3>Идея решения</h3><p>${esc(r.idea)}</p></section><section><h3>План реализации</h3><p>${esc(r.plan)}</p></section><div class="review-details"><section><h3>Предполагаемый срок</h3><p>${esc(r.deadline) || 'Не указан'}</p></section><section><h3>Прототип</h3><p>${validLink(r.link) ? `<a class="proposal-link" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.link)} ↗</a>` : 'Не указан'}</p></section></div></div><div class="decision-actions"><button type="button" class="accept-button" data-index="${index}" data-decision="accepted" ${status === 'accepted' ? 'disabled' : ''} aria-label="Принять: ${esc(r.team)}">✓ Принять</button><button type="button" class="reject-button" data-index="${index}" data-decision="rejected" ${status === 'rejected' ? 'disabled' : ''} aria-label="Отклонить: ${esc(r.team)}">Отклонить</button>${status !== 'pending' ? `<button type="button" class="defer-button" data-index="${index}" data-decision="pending" aria-label="Вернуть на рассмотрение: ${esc(r.team)}">Вернуть на рассмотрение</button>` : '<span class="defer-note">Можно оставить на рассмотрении</span>'}</div></article>`;}).join('') : empty('Предложений пока нет','После отправки предложения командой оно появится в этом списке. Никакого автоматического выбора не происходит.')}</div><p class="data-note">Демо без авторизации: решения сохраняются в этом браузере. Серверное управление статусами подключает владелец бизнес-логики.</p>`;
+ $('decision-list').addEventListener('click',event => {
+  const button = event.target.closest('[data-decision]');
+  if (!button || button.disabled) return;
+  const index = Number(button.dataset.index), decision = button.dataset.decision;
+  const proposal = task.responses[index]; if (!proposal) return;
+  if (!setProposalDecision(task,index,decision)) { $('decision-error').textContent = 'Не удалось сохранить решение. Статус не изменён. Повторите попытку.'; return; }
+  responses(task);
+  toast(`«${proposal.team}»: ${labels[decision]}.`);
+  const next = $('decision-list').querySelector(`[data-index="${index}"]:not(:disabled)`);
+  if(next) next.focus();
+ });
+}
+let currentRole = 'guest';
+try { currentRole = sessionStorage.getItem('ai-sana-role') || 'guest'; } catch {}
+function updateRole(role) {
+ currentRole = role;
+ try {sessionStorage.setItem('ai-sana-role',role);} catch {}
+ document.querySelectorAll('.role-switch [data-role]').forEach(link => {
+  const active = link.dataset.role === role;
+  link.classList.toggle('active',active);
+  if(active) link.setAttribute('aria-current','true'); else link.removeAttribute('aria-current');
+ });
 }
 function route(focus = true) {
   cancelAnalysis();
   const [name,rawId] = location.hash.slice(1).split('/');
+  updateRole(['business','draft','edit','responses'].includes(name) ? 'business' : currentRole);
   $('home-screen').hidden = Boolean(name);
   $('business-screen').hidden = name !== 'business';
   $('detail-screen').hidden = !['draft','edit','responses','catalog','task'].includes(name);
@@ -205,7 +242,7 @@ $('load-demo').addEventListener('click',() => {
   );
   const saved = save(); renderBusiness(); if(saved) toast('Добавлены три демо-задачи. Рейтинги и отклики — тестовые.');
 });
-document.querySelectorAll('[data-role]').forEach(link => link.addEventListener('click',() => document.dispatchEvent(new CustomEvent('app:navigate',{detail:{role:link.dataset.role,route:link.dataset.role === 'business' ? 'business' : 'catalog'}}))));
+document.querySelectorAll('[data-role]').forEach(link => link.addEventListener('click',() => { updateRole(link.dataset.role); document.dispatchEvent(new CustomEvent('app:navigate',{detail:{role:link.dataset.role,route:link.dataset.role === 'business' ? 'business' : 'catalog'}})); }));
 window.addEventListener('hashchange',() => route());
 
 
