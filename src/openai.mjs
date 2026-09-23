@@ -1,16 +1,56 @@
+import { CARD_FIELDS } from "./question-generator.mjs";
+
 const API_URL = "https://api.openai.com/v1/responses";
+const cardFieldNames = Object.keys(CARD_FIELDS);
+const factFieldNames = ["description", "industry", ...cardFieldNames];
 
 const questionsSchema = {
   type: "object",
   properties: {
+    missingFields: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field: { type: "string", enum: cardFieldNames },
+        },
+        required: ["field"],
+        additionalProperties: false,
+      },
+    },
     questions: {
       type: "array",
       minItems: 3,
-      maxItems: 3,
-      items: { type: "string" },
+      maxItems: 5,
+      items: {
+        type: "object",
+        properties: {
+          targetField: { type: "string", enum: cardFieldNames },
+          question: { type: "string" },
+        },
+        required: ["targetField", "question"],
+        additionalProperties: false,
+      },
+    },
+    extractedFacts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          field: { type: "string", enum: factFieldNames },
+          value: { type: "string" },
+          source: {
+            type: "string",
+            enum: ["description", "industry", "knownFields"],
+          },
+          evidence: { type: "string" },
+        },
+        required: ["field", "value", "source", "evidence"],
+        additionalProperties: false,
+      },
     },
   },
-  required: ["questions"],
+  required: ["missingFields", "questions", "extractedFacts"],
   additionalProperties: false,
 };
 
@@ -96,21 +136,27 @@ async function structuredResponse({ apiKey, model, instructions, input, schema, 
   }
 }
 
-export async function generateAiQuestions({ apiKey, model, task }) {
+// Генератор получает уже очищенный объект, а не произвольный текст из HTTP-запроса.
+// Это упрощает промпт и делает формат одинаковым для AI и локальной заглушки.
+export async function generateAiQuestions({ apiKey, model, input }) {
   const result = await structuredResponse({
     apiKey,
     model,
-    name: "hackathon_questions",
+    name: "clarification_questions",
     schema: questionsSchema,
     instructions: [
-      "Ты опытный фасилитатор бизнес-хакатонов.",
-      "Задай ровно 3 коротких, конкретных и непересекающихся вопроса на русском языке.",
-      "Вопросы должны прояснить: пользователя и контекст; измеримый результат; данные, интеграции и ограничения.",
-      "Не предлагай решение и не повторяй факты, которые уже есть в задаче.",
+      "Ты анализируешь черновик бизнес-задачи для студенческого хакатона.",
+      "Используй только факты, явно присутствующие во входном JSON.",
+      "Не придумывай пользователей, данные, сроки, метрики, контакты или ограничения.",
+      "Определи незаполненные поля только из fieldsToCheck и верни их в missingFields.",
+      "Задай от 3 до 5 коротких, конкретных и неповторяющихся вопросов на русском языке.",
+      "Каждый вопрос должен уточнять ровно одно поле и содержать его имя в targetField.",
+      "Для каждого извлечённого факта value и evidence должны быть одной и той же точной цитатой из входного JSON.",
+      "Не предлагай решение задачи и не добавляй пояснения вне JSON.",
     ].join(" "),
-    input: `Описание задачи:\n${task}`,
+    input: JSON.stringify(input),
   });
-  return result.questions;
+  return result;
 }
 
 export async function generateAiCards({ apiKey, model, task, questions, answers }) {

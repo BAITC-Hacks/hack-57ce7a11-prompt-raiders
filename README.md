@@ -1,4 +1,7 @@
 <<<<<<< HEAD
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
 # hack-57ce7a11-prompt-raiders
 Hackathon team repository for Prompt Raiders
 
@@ -8,6 +11,7 @@ Hackathon team repository for Prompt Raiders
 
 `GET /api/tasks` возвращает задачи, `POST /api/tasks` создаёт задачу. Для создания обязательны `businessId` и `title`. `businessId` хранится как ссылка-идентификатор, отдельная модель бизнеса пока не реализована. Статусы: `draft`, `confirmed`, `published`; уровни готовности: `draft`, `in_progress`, `ready`, `priority`; оценка ограничивается диапазоном 0–100.
 =======
+>>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65
 # AI Sana — главная и выбор роли
 
 Реализован только экран 1 из предоставленного изображения.
@@ -28,4 +32,69 @@ Hackathon team repository for Prompt Raiders
 - `previous-prototype/` — ранее сохранённый прототип, не подключён к главной.
 
 В `package.json` есть незавершённый конфликт слияния frontend/backend; он не разрешался в рамках этой задачи. До его разрешения используйте прямое открытие HTML. Backend-файлы не изменялись.
+<<<<<<< HEAD
+=======
+# Генератор уточняющих вопросов
+
+Модуль принимает черновое описание бизнес-задачи, отрасль, уже известные поля карточки и список полей для проверки. В ответ он возвращает пропуски, 3–5 уточняющих вопросов и подтверждённые входом факты.
+
+## Запуск
+
+```bash
+npm start
+```
+
+Сервер будет доступен по адресу `http://localhost:3000`.
+
+## Шаблонные данные
+
+Пока интерфейс и база не готовы, откройте:
+
+```text
+GET http://localhost:3000/api/questions/demo
+```
+
+Маршрут вернёт одновременно шаблонный вход и результат локального генератора.
+
+## Реальный запрос
+
+```text
+POST http://localhost:3000/api/questions
+Content-Type: application/json
+```
+
+Тело запроса:
+
+```json
+{
+  "description": "Хотим улучшить обслуживание клиентов в розничных магазинах.",
+  "industry": "Розничная торговля",
+  "knownFields": {
+    "context": "Покупатели иногда долго ждут консультанта.",
+    "need": "Сократить время ожидания."
+  },
+  "fieldsToCheck": [
+    "context",
+    "need",
+    "users",
+    "data",
+    "constraints",
+    "expectedResult",
+    "successCriteria",
+    "contact",
+    "interactionFormat"
+  ]
+}
+```
+
+Без `OPENAI_API_KEY` используется локальный генератор. Если ключ задан, сервер вызывает OpenAI Responses API со строгим JSON-форматом. Некорректный или недоступный AI автоматически заменяется шаблонными вопросами.
+
+## Проверка
+
+```bash
+npm test
+```
+>>>>>>> Stashed changes
+=======
 >>>>>>> 434bdf16a927b2fd6a200c1b5b9b9b3539e74b74
+>>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65

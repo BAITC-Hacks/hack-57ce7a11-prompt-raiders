@@ -4,11 +4,11 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   generateLocalCards,
-  generateLocalQuestions,
   normalizeText,
   validateAnswers,
 } from "./src/generator.mjs";
 import { generateAiCards, generateAiQuestions } from "./src/openai.mjs";
+<<<<<<< HEAD
 import { listRecords, saveRecord } from "./src/database.mjs";
 import {
   createClarifyingQuestion,
@@ -20,8 +20,22 @@ import {
   QUESTION_SOURCES,
   TASK_STATUSES,
 } from "./src/models.mjs";
+=======
+<<<<<<< HEAD
+import { DEMO_QUESTION_INPUT } from "./src/demo-data.mjs";
+import {
+  generateTemplateQuestions,
+  prepareQuestionInput,
+  validateAiQuestionResult,
+} from "./src/question-generator.mjs";
+=======
+import { listTasks, saveTask } from "./src/database.mjs";
+import { createTask, TASK_STATUSES } from "./src/models.mjs";
+>>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65
+>>>>>>> f261ff56580f5d767773fa8c1161197df54a4004
 
-const root = fileURLToPath(new URL("./public/", import.meta.url));
+// Статические файлы проекта сейчас лежат в корне репозитория.
+const root = fileURLToPath(new URL("./", import.meta.url));
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
 const apiKey = process.env.OPENAI_API_KEY?.trim();
 const model = process.env.OPENAI_MODEL?.trim() || "gpt-5-mini";
@@ -33,6 +47,10 @@ const mimeTypes = {
   ".svg": "image/svg+xml",
   ".json": "application/json; charset=utf-8",
 };
+
+// Сервер лежит рядом с интерфейсом, поэтому наружу отдаём только публичные файлы.
+// Исходники сервера, .env и содержимое .git через HTTP недоступны.
+const publicFiles = new Set(["/index.html", "/styles.css", "/app.js"]);
 
 function sendJson(response, status, payload) {
   response.writeHead(status, {
@@ -59,24 +77,38 @@ async function readJson(request) {
 
 async function handleQuestions(request, response) {
   const body = await readJson(request);
-  const task = normalizeText(body.task);
-  if (task.length < 20) return sendJson(response, 400, { error: "Опишите задачу подробнее — минимум 20 символов." });
+  const input = prepareQuestionInput(body);
 
   if (!apiKey) {
-    return sendJson(response, 200, { questions: generateLocalQuestions(task), mode: "demo" });
+    return sendJson(response, 200, {
+      ...generateTemplateQuestions(input),
+      mode: "demo",
+      notice: "OPENAI_API_KEY не задан — использованы безопасные шаблонные вопросы.",
+    });
   }
 
   try {
-    const questions = await generateAiQuestions({ apiKey, model, task });
-    return sendJson(response, 200, { questions, mode: "ai" });
+    const aiResult = await generateAiQuestions({ apiKey, model, input });
+    const result = validateAiQuestionResult(aiResult, input);
+    return sendJson(response, 200, { ...result, mode: "ai" });
   } catch (error) {
     console.error("Question generation failed:", error.message);
     return sendJson(response, 200, {
-      questions: generateLocalQuestions(task),
+      ...generateTemplateQuestions(input),
       mode: "fallback",
       notice: "ИИ временно недоступен — использованы подготовленные уточняющие вопросы.",
     });
   }
+}
+
+// Отдельный маршрут позволяет человеку №1 подключить готовый пример до появления формы.
+function handleDemoQuestions(response) {
+  const input = prepareQuestionInput(DEMO_QUESTION_INPUT);
+  return sendJson(response, 200, {
+    input,
+    result: generateTemplateQuestions(input),
+    mode: "demo",
+  });
 }
 
 async function handleCards(request, response) {
@@ -108,6 +140,9 @@ async function handleCards(request, response) {
 async function serveStatic(request, response) {
   const url = new URL(request.url, "http://localhost");
   const pathname = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+  if (!publicFiles.has(pathname) && !pathname.startsWith("/assets/")) {
+    return sendJson(response, 404, { error: "Страница не найдена" });
+  }
   const safePath = normalize(pathname).replace(/^(\.\.[/\\])+/, "");
   const filePath = join(root, safePath);
   if (!filePath.startsWith(root)) return sendJson(response, 404, { error: "Не найдено" });
@@ -127,6 +162,7 @@ async function serveStatic(request, response) {
 
 const server = createServer(async (request, response) => {
   try {
+<<<<<<< HEAD
     const getCollections = {
       "/api/tasks": "tasks",
       "/api/clarifying-questions": "questions",
@@ -137,6 +173,13 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && getCollections[request.url]) {
       const collection = getCollections[request.url];
       return sendJson(response, 200, { [collection]: await listRecords(collection) });
+=======
+<<<<<<< HEAD
+    if (request.method === "GET" && request.url === "/api/questions/demo") return handleDemoQuestions(response);
+=======
+    if (request.method === "GET" && request.url === "/api/tasks") {
+      return sendJson(response, 200, { tasks: await listTasks() });
+>>>>>>> f261ff56580f5d767773fa8c1161197df54a4004
     }
     if (request.method === "POST" && request.url === "/api/tasks") {
       const body = await readJson(request);
@@ -187,6 +230,7 @@ const server = createServer(async (request, response) => {
       }
       return sendJson(response, 201, { rating: await saveRecord("ratings", rating) });
     }
+>>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65
     if (request.method === "POST" && request.url === "/api/questions") return await handleQuestions(request, response);
     if (request.method === "POST" && request.url === "/api/cards") return await handleCards(request, response);
     if (request.method === "GET") return await serveStatic(request, response);
