@@ -9,8 +9,17 @@ import {
   validateAnswers,
 } from "./src/generator.mjs";
 import { generateAiCards, generateAiQuestions } from "./src/openai.mjs";
-import { listTasks, saveTask } from "./src/database.mjs";
-import { createTask, TASK_STATUSES } from "./src/models.mjs";
+import { listRecords, saveRecord } from "./src/database.mjs";
+import {
+  createClarifyingQuestion,
+  createProposal,
+  createRating,
+  createTask,
+  createTeam,
+  PROPOSAL_STATUSES,
+  QUESTION_SOURCES,
+  TASK_STATUSES,
+} from "./src/models.mjs";
 
 const root = fileURLToPath(new URL("./public/", import.meta.url));
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
@@ -118,15 +127,65 @@ async function serveStatic(request, response) {
 
 const server = createServer(async (request, response) => {
   try {
-    if (request.method === "GET" && request.url === "/api/tasks") {
-      return sendJson(response, 200, { tasks: await listTasks() });
+    const getCollections = {
+      "/api/tasks": "tasks",
+      "/api/clarifying-questions": "questions",
+      "/api/teams": "teams",
+      "/api/proposals": "proposals",
+      "/api/ratings": "ratings",
+    };
+    if (request.method === "GET" && getCollections[request.url]) {
+      const collection = getCollections[request.url];
+      return sendJson(response, 200, { [collection]: await listRecords(collection) });
     }
     if (request.method === "POST" && request.url === "/api/tasks") {
       const body = await readJson(request);
       const task = createTask(body);
       if (!task.businessId || !task.title) return sendJson(response, 400, { error: "Укажите businessId и название задачи." });
       if (!TASK_STATUSES.includes(body.status ?? "draft")) return sendJson(response, 400, { error: "Статус должен быть draft, confirmed или published." });
-      return sendJson(response, 201, { task: await saveTask(task) });
+      return sendJson(response, 201, { task: await saveRecord("tasks", task) });
+    }
+    if (request.method === "POST" && request.url === "/api/clarifying-questions") {
+      const body = await readJson(request);
+      const question = createClarifyingQuestion(body);
+      if (!question.taskId || !question.targetField || !question.question) {
+        return sendJson(response, 400, { error: "Укажите taskId, targetField и question." });
+      }
+      if (!QUESTION_SOURCES.includes(body.source ?? "local_stub")) {
+        return sendJson(response, 400, { error: "source должен быть ai или local_stub." });
+      }
+      if (!(await listRecords("tasks")).some((task) => task.id === question.taskId)) {
+        return sendJson(response, 400, { error: "Задача не найдена." });
+      }
+      return sendJson(response, 201, { question: await saveRecord("questions", question) });
+    }
+    if (request.method === "POST" && request.url === "/api/teams") {
+      const team = createTeam(await readJson(request));
+      if (!team.name) return sendJson(response, 400, { error: "Укажите название команды." });
+      return sendJson(response, 201, { team: await saveRecord("teams", team) });
+    }
+    if (request.method === "POST" && request.url === "/api/proposals") {
+      const body = await readJson(request);
+      const proposal = createProposal(body);
+      if (!proposal.taskId || !proposal.teamId || !proposal.idea || !proposal.plan) {
+        return sendJson(response, 400, { error: "Укажите taskId, teamId, idea и plan." });
+      }
+      if (!PROPOSAL_STATUSES.includes(body.status ?? "pending")) {
+        return sendJson(response, 400, { error: "Статус должен быть pending, accepted или rejected." });
+      }
+      const [tasks, teams] = await Promise.all([listRecords("tasks"), listRecords("teams")]);
+      if (!tasks.some((task) => task.id === proposal.taskId)) return sendJson(response, 400, { error: "Задача не найдена." });
+      if (!teams.some((team) => team.id === proposal.teamId)) return sendJson(response, 400, { error: "Команда не найдена." });
+      return sendJson(response, 201, { proposal: await saveRecord("proposals", proposal) });
+    }
+    if (request.method === "POST" && request.url === "/api/ratings") {
+      const body = await readJson(request);
+      const rating = createRating(body);
+      if (!rating.taskId || !rating.level) return sendJson(response, 400, { error: "Укажите taskId и level." });
+      if (!(await listRecords("tasks")).some((task) => task.id === rating.taskId)) {
+        return sendJson(response, 400, { error: "Задача не найдена." });
+      }
+      return sendJson(response, 201, { rating: await saveRecord("ratings", rating) });
     }
     if (request.method === "POST" && request.url === "/api/questions") return await handleQuestions(request, response);
     if (request.method === "POST" && request.url === "/api/cards") return await handleCards(request, response);
