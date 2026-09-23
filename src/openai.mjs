@@ -1,4 +1,5 @@
 import { CARD_FIELDS } from "./question-generator.mjs";
+import { TASK_SCORE_MAX, TASK_SCORE_RUBRIC } from "./scoring.mjs";
 
 const API_URL = "https://api.openai.com/v1/responses";
 const cardFieldNames = Object.keys(CARD_FIELDS);
@@ -95,6 +96,18 @@ const cardsSchema = {
   additionalProperties: false,
 };
 
+const ratingProperties = Object.fromEntries(TASK_SCORE_RUBRIC.map(({ field }) => [field, { type: "integer" }]));
+const ratingSchema = {
+  type: "object",
+  properties: {
+    scores: { type: "object", properties: ratingProperties, required: Object.keys(ratingProperties), additionalProperties: false },
+    missingFields: { type: "array", items: { type: "string", enum: TASK_SCORE_RUBRIC.map(({ field }) => field) } },
+    recommendations: { type: "array", items: { type: "string" } },
+  },
+  required: ["scores", "missingFields", "recommendations"],
+  additionalProperties: false,
+};
+
 function extractOutputText(response) {
   if (typeof response.output_text === "string") return response.output_text;
   for (const item of response.output ?? []) {
@@ -175,4 +188,25 @@ export async function generateAiCards({ apiKey, model, task, questions, answers 
     input: `Описание задачи:\n${task}\n\nИнтервью:\n${interview}`,
   });
   return result.cards;
+}
+
+export async function generateAiTaskRating({ apiKey, model, task }) {
+  const rubric = TASK_SCORE_RUBRIC.map(({ field, label, max, guidance }) =>
+    `${field} (${label}): 0–${max} баллов. ${guidance}`,
+  ).join("\n");
+  return structuredResponse({
+    apiKey,
+    model,
+    name: "task_card_rating",
+    schema: ratingSchema,
+    instructions: [
+      "Оцени качество карточки бизнес-задачи для хакатона по заданной шкале.",
+      `Оцени каждое поле целым числом от 0 до его максимума. Сумма максимумов равна ${TASK_SCORE_MAX}; не возвращай общий балл, приложение посчитает его само.`,
+      "Пустое поле получает 0. Частичное, расплывчатое или непроверяемое описание получает частичный балл. Не додумывай факты и доступные ресурсы.",
+      "Верни в missingFields поля, которые пусты или не содержат нужных сведений. Дай краткие конкретные рекомендации, как поднять оценку.",
+      "Рубрика:\n" + rubric,
+      "Ответ только по JSON-схеме.",
+    ].join(" "),
+    input: JSON.stringify(task),
+  });
 }

@@ -32,3 +32,15 @@ export async function saveRecord(collection, record) {
   await writeFile(file, `${JSON.stringify(records, null, 2)}\n`, "utf8");
   return record;
 }
+
+export async function updateRecord(collection, id, updates) {
+  const file = files[collection];
+  if (!file) throw new Error("Неизвестная коллекция");
+  const records = await listRecords(collection);
+  const index = records.findIndex((record) => record.id === id);
+  if (index < 0) return null;
+  records[index] = { ...records[index], ...updates };
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(records, null, 2)}\n`, "utf8");
+  return records[index];
+}
