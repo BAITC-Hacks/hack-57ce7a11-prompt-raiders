@@ -1,33 +1,36 @@
 <!doctype html>
 <html lang="ru">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f4f5ef"><title>AI Sana — Challenge Hub</title><link rel="stylesheet" href="styles.css"><script src="app.js" defer></script></head>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6f1">
+  <title>AI Sana — выберите роль</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
 <body>
-<header class="header wrap"><a class="brand" href="#builder"><span class="logo">↗</span> AI Sana <small>CHALLENGE HUB</small></a><span class="demo-label">● Демо · данные в этом браузере</span></header>
-<main class="wrap">
-<div class="intro"><div><p class="eyebrow">БИЗНЕС × СТУДЕНЧЕСКИЕ КОМАНДЫ</p><h1>Реальные задачи.<br><em>Сильные решения.</em></h1><p>Превратите идею в понятную задачу — и найдите команду для её реализации.</p></div><div class="intro-mark" aria-hidden="true">✳<span>ОТ ИДЕИ<br>К СОТРУДНИЧЕСТВУ</span></div></div>
-<nav class="tabs" aria-label="Разделы платформы"><button data-tab="builder">01 <span>Конструктор</span></button><button data-tab="catalog">02 <span>Каталог задач</span><b id="catalog-count">0</b></button><button data-tab="student">03 <span>Кабинет команды</span></button><button data-tab="responses">04 <span>Отклики бизнесу</span><b id="response-count">0</b></button></nav>
-<section id="tab-builder" class="tab-content" aria-labelledby="builder-title">
-<div class="section-heading"><div><p class="eyebrow">ДЛЯ БИЗНЕСА</p><h2 id="builder-title" tabindex="-1">С чего начнём?</h2></div><button class="button secondary" id="use-example">Заполнить пример ↗</button></div>
-<div class="builder-grid"><div class="builder-main">
-<article class="panel"><div class="step-title"><span>1</span><h3>Расскажите о задаче</h3></div><p class="muted">Что сейчас не работает и какую помощь вы ждёте от команды?</p><label for="task-draft">Черновик задачи</label><textarea id="task-draft" rows="5" maxlength="5000" placeholder="Например: наша кофейня принимает заказы в мессенджере. Заказы теряются, а сотрудники тратят много времени на ответы. Хотим упростить процесс."></textarea><div class="panel-bottom"><span class="hint">Минимум 20 символов</span><button class="button" id="btn-analyze">Анализировать ИИ <span>✳</span></button></div><p class="notice">Демо-анализ по правилам, без подключения ИИ. Текст не отправляется на сервер.</p></article>
-<div id="ai-result" hidden>
-<article class="panel"><div class="step-title"><span>2</span><h3>Три уточнения — более ясная задача</h3></div><p class="muted">Ответы заполнят карточку. Все поля можно будет отредактировать.</p><div id="questions-list">
-<label for="answer-audience">01 / Кто будет пользоваться решением и что ему нужно?</label><textarea id="answer-audience" class="answer-input" rows="2" maxlength="2000" placeholder="Например: клиенты кофейни, которые хотят заказать кофе к определённому времени."></textarea>
-<label for="answer-result">02 / Какой результат покажет, что задача решена?</label><textarea id="answer-result" class="answer-input" rows="2" maxlength="2000" placeholder="Например: прототип приёма заказов, 10 тестовых заказов без потерь."></textarea>
-<label for="answer-constraints">03 / Какие есть данные, ограничения, сроки и контакт?</label><textarea id="answer-constraints" class="answer-input" rows="3" maxlength="2000" placeholder="Например: меню в CSV, без персональных данных; срок — 2 недели; связь через куратора команды."></textarea></div><button class="button secondary" id="btn-recalc">Обновить карточку и рейтинг ↗</button></article>
-<article class="panel"><div class="step-title"><span>3</span><h3>Проверьте перед публикацией</h3></div><p class="muted">Рейтинг пересчитывается при редактировании полей.</p><form id="publish-form">
-<label for="card-title">Название задачи</label><input id="card-title" maxlength="120" required minlength="5">
-<label for="card-preview">Контекст и проблема</label><textarea id="card-preview" rows="4" maxlength="5000" required minlength="20"></textarea>
-<label for="card-audience">Пользователи и потребность</label><textarea id="card-audience" rows="2" maxlength="2000" required minlength="10"></textarea>
-<label for="card-result">Ожидаемый результат и критерий успеха</label><textarea id="card-result" rows="2" maxlength="2000" required minlength="10"></textarea>
-<label for="card-constraints">Данные, ограничения, срок и контакт</label><textarea id="card-constraints" rows="3" maxlength="2000" required minlength="10"></textarea>
-<div class="panel-bottom"><span class="hint">Публикация в локальном демо-каталоге</span><button class="button" id="btn-publish" type="submit">Опубликовать ↗</button></div></form></article></div>
-</div><aside class="panel score-panel"><p class="eyebrow">READINESS SCORE</p><h3>Насколько задача готова?</h3><div class="score-number"><span id="score-val">0</span><span>/ 100</span></div><span id="status-val" class="badge draft">Черновик</span><div class="progress" role="progressbar" aria-label="Готовность задачи" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="score-bar"></div></div><div id="criteria-list"></div><p class="notice">7 критериев · максимум 100 баллов. Балл отражает полноту полей, а не качество идеи или гарантию успеха.</p><div class="score-tip">↗ <span>Чем понятнее задача, тем предметнее предложения команд.</span></div></aside></div><p id="builder-error" class="error" role="alert"></p></section>
-<section id="tab-catalog" class="tab-content" hidden aria-labelledby="catalog-title"><div class="section-heading"><div><p class="eyebrow">ОТ ЗАДАЧИ К РЕШЕНИЮ</p><h2 id="catalog-title" tabindex="-1">Каталог задач</h2></div><span class="muted">Сначала — самый высокий рейтинг ↓</span></div><div id="catalog-list" class="cards"></div></section>
-<section id="tab-student" class="tab-content" hidden aria-labelledby="student-title"><div class="section-heading"><div><p class="eyebrow">ДЛЯ СТУДЕНТОВ</p><h2 id="student-title" tabindex="-1">Кабинет команды</h2></div><button class="button secondary" data-tab="catalog">Найти задачу ↗</button></div><p class="muted">Ваши предложения и решения бизнеса. В демо все роли работают в одном браузере.</p><div id="student-list" class="response-list"></div></section>
-<section id="tab-responses" class="tab-content" hidden aria-labelledby="responses-title"><div class="section-heading"><div><p class="eyebrow">РЕШЕНИЕ ЗА ВАМИ</p><h2 id="responses-title" tabindex="-1">Отклики команд</h2></div></div><p class="muted">Откройте предложение и выберите команду вручную. Автоматического отбора нет.</p><label for="task-filter">Задача</label><select id="task-filter"><option value="all">Все задачи</option></select><div id="responses-list" class="response-list"></div></section>
-</main>
-<footer class="wrap footer"><span>AI Sana Challenge Hub <b>·</b> Prompt Raiders</span><span>Демо без аккаунтов и серверного хранения</span></footer>
-<dialog id="task-dialog" aria-labelledby="detail-title"><div class="dialog-top"><span class="eyebrow">КАРТОЧКА ЗАДАЧИ</span><button class="icon-button" id="close-dialog" aria-label="Закрыть">×</button></div><div id="task-detail"></div><form id="response-form"><h3>Предложите своё решение</h3><label for="team-name">Название команды</label><input id="team-name" required minlength="2" maxlength="100" placeholder="Например: Prompt Raiders"><label for="solution-idea">Идея решения</label><textarea id="solution-idea" required minlength="10" maxlength="3000" rows="3"></textarea><label for="solution-plan">План реализации</label><textarea id="solution-plan" required minlength="10" maxlength="3000" rows="3"></textarea><label for="prototype-url">Ссылка на прототип / GitHub</label><input id="prototype-url" type="url" required maxlength="1000" placeholder="https://github.com/team/project"><p id="response-error" class="error" role="alert"></p><button class="button" type="submit">Отправить отклик ↗</button></form></dialog>
-<div id="toast" role="status" class="toast" hidden></div>
-</body></html>
+  <header class="header wrap"><a class="brand" href="./" aria-label="AI Sana — главная"><span class="logo" aria-hidden="true">↗</span><span>AI Sana<small>CHALLENGE HUB</small></span></a><span class="header-caption">Бизнес и студенческие команды</span></header>
+  <main class="wrap home">
+    <p class="eyebrow">РЕАЛЬНЫЕ ЗАДАЧИ. СОВМЕСТНЫЕ РЕШЕНИЯ.</p>
+    <h1>Идеям нужен бизнес.<br><em>Задачам — команда.</em></h1>
+    <p class="intro">Бизнес делится задачами, команды предлагают решения.<br>Выберите, как вы хотите участвовать.</p>
+    <div class="role-grid" aria-label="Выбор роли">
+      <section class="role-card business-card" aria-labelledby="business-title">
+        <div class="card-top"><span class="role-icon" aria-hidden="true">▦</span><span class="card-number">01 / БИЗНЕС</span></div>
+        <h2 id="business-title">Найдите команду<br>для вашей задачи</h2>
+        <p>Расскажите о потребности бизнеса, опубликуйте задачу и выберите подходящее предложение.</p>
+        <a class="role-button business-button" href="#business" data-role="business">Я представитель бизнеса <span aria-hidden="true">↗</span></a>
+      </section>
+      <section class="role-card team-card" aria-labelledby="team-title">
+        <div class="card-top"><span class="role-icon" aria-hidden="true">✳</span><span class="card-number">02 / КОМАНДА</span></div>
+        <h2 id="team-title">Примените навыки<br>на реальной задаче</h2>
+        <p>Исследуйте задачи бизнеса, предложите свою идею и создайте решение вместе с командой.</p>
+        <a class="role-button team-button" href="#catalog" data-role="team">Я участник команды <span aria-hidden="true">↗</span></a>
+      </section>
+    </div>
+    <div class="catalog-entry"><span>Хотите сначала посмотреть задачи?</span><a href="#catalog" data-role="guest">Открыть общий каталог <span aria-hidden="true">→</span></a><small>Все опубликованные задачи доступны без ограничений.</small></div>
+    <p id="navigation-status" class="navigation-status" role="status" hidden></p>
+  </main>
+  <footer class="wrap footer"><span>AI Sana Challenge Hub</span><span>Prompt Raiders · HackAlem</span></footer>
+</body>
+</html>
