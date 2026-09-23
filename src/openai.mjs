@@ -1,10 +1,12 @@
 import { CARD_FIELDS } from "./question-generator.mjs";
 import { CARD_OUTPUT_FIELDS } from "./card-generator.mjs";
+import { TASK_SCORE_MAX, TASK_SCORE_RUBRIC } from "./scoring.mjs";
 
 const API_URL = "https://api.openai.com/v1/responses";
 const cardFieldNames = Object.keys(CARD_FIELDS);
 const factFieldNames = ["description", "industry", ...cardFieldNames];
 
+// Строгая схема AI-операции 1: пропуски, вопросы и подтверждённые факты.
 const questionsSchema = {
   type: "object",
   properties: {
@@ -59,8 +61,7 @@ const taskCardProperties = Object.fromEntries(
   CARD_OUTPUT_FIELDS.map((field) => [field, { type: "string" }]),
 );
 
-// Структура AI-операции 2 полностью совпадает с карточкой в models.mjs.
-// fieldSources нужны для автоматической проверки, что модель не выдумала факты.
+// AI-операция 2 возвращает одну карточку и точные источники её полей.
 const taskCardSchema = {
   type: "object",
   properties: {
@@ -92,17 +93,52 @@ const taskCardSchema = {
   additionalProperties: false,
 };
 
+const ratingProperties = Object.fromEntries(
+  TASK_SCORE_RUBRIC.map(({ field }) => [field, { type: "integer" }]),
+);
+
+// AI оценивает отдельные разделы, а итог приложение считает самостоятельно.
+const ratingSchema = {
+  type: "object",
+  properties: {
+    scores: {
+      type: "object",
+      properties: ratingProperties,
+      required: Object.keys(ratingProperties),
+      additionalProperties: false,
+    },
+    missingFields: {
+      type: "array",
+      items: {
+        type: "string",
+        enum: TASK_SCORE_RUBRIC.map(({ field }) => field),
+      },
+    },
+    recommendations: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+  required: ["scores", "missingFields", "recommendations"],
+  additionalProperties: false,
+};
+
 function extractOutputText(response) {
   if (typeof response.output_text === "string") return response.output_text;
+
   for (const item of response.output ?? []) {
     for (const content of item.content ?? []) {
-      if (content.type === "refusal") throw new Error(content.refusal || "Модель отказалась отвечать");
+      if (content.type === "refusal") {
+        throw new Error(content.refusal || "Модель отказалась отвечать");
+      }
       if (content.type === "output_text" && content.text) return content.text;
     }
   }
+
   throw new Error("ИИ не вернул текстовый ответ");
 }
 
+// Общая функция выполняет запрос с тайм-аутом и разбирает строгий JSON-ответ.
 async function structuredResponse({ apiKey, model, instructions, input, schema, name }) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
@@ -118,7 +154,14 @@ async function structuredResponse({ apiKey, model, instructions, input, schema, 
         model,
         instructions,
         input,
-        text: { format: { type: "json_schema", name, strict: true, schema } },
+        text: {
+          format: {
+            type: "json_schema",
+            name,
+            strict: true,
+            schema,
+          },
+        },
       }),
       signal: controller.signal,
     });
@@ -127,16 +170,15 @@ async function structuredResponse({ apiKey, model, instructions, input, schema, 
     if (!response.ok) {
       throw new Error(body.error?.message || `OpenAI API вернул ${response.status}`);
     }
+
     return JSON.parse(extractOutputText(body));
   } finally {
     clearTimeout(timeout);
   }
 }
 
-// Генератор получает уже очищенный объект, а не произвольный текст из HTTP-запроса.
-// Это упрощает промпт и делает формат одинаковым для AI и локальной заглушки.
 export async function generateAiQuestions({ apiKey, model, input }) {
-  const result = await structuredResponse({
+  return structuredResponse({
     apiKey,
     model,
     name: "clarification_questions",
@@ -148,16 +190,13 @@ export async function generateAiQuestions({ apiKey, model, input }) {
       "Определи незаполненные поля только из fieldsToCheck и верни их в missingFields.",
       "Задай от 3 до 5 коротких, конкретных и неповторяющихся вопросов на русском языке.",
       "Каждый вопрос должен уточнять ровно одно поле и содержать его имя в targetField.",
-      "Для каждого извлечённого факта value и evidence должны быть одной и той же точной цитатой из входного JSON.",
+      "Для каждого факта value и evidence должны быть одной точной цитатой из входного JSON.",
       "Не предлагай решение задачи и не добавляй пояснения вне JSON.",
     ].join(" "),
     input: JSON.stringify(input),
   });
-  return result;
 }
 
-// AI-операция 2 получает уже проверенный контракт из card-generator.mjs.
-// Она возвращает одну карточку бизнес-задачи, а не варианты решения для команды.
 export async function generateAiTaskCard({ apiKey, model, input }) {
   return structuredResponse({
     apiKey,
@@ -179,5 +218,30 @@ export async function generateAiTaskCard({ apiKey, model, input }) {
       "Не добавляй текст вне заданного JSON-формата.",
     ].join(" "),
     input: JSON.stringify(input),
+  });
+}
+
+export async function generateAiTaskRating({ apiKey, model, task }) {
+  const rubric = TASK_SCORE_RUBRIC
+    .map(({ field, label, max, guidance }) =>
+      `${field} (${label}): 0–${max} баллов. ${guidance}`,
+    )
+    .join("\n");
+
+  return structuredResponse({
+    apiKey,
+    model,
+    name: "task_card_rating",
+    schema: ratingSchema,
+    instructions: [
+      "Оцени качество карточки бизнес-задачи для хакатона по заданной шкале.",
+      `Оцени каждое поле целым числом от 0 до его максимума. Сумма максимумов равна ${TASK_SCORE_MAX}; не возвращай общий балл, приложение посчитает его само.`,
+      "Пустое поле получает 0. Частичное или расплывчатое описание получает частичный балл.",
+      "Не додумывай факты, контакты, данные и доступные ресурсы.",
+      "Верни в missingFields поля без достаточных сведений и дай краткие рекомендации.",
+      "Рубрика:\n" + rubric,
+      "Ответ только по JSON-схеме.",
+    ].join(" "),
+    input: JSON.stringify(task),
   });
 }
