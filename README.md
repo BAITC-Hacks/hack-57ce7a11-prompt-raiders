@@ -1,4 +1,17 @@
+<<<<<<< HEAD
 <<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+# hack-57ce7a11-prompt-raiders
+Hackathon team repository for Prompt Raiders
+
+## Модель задачи
+
+Сейчас реализована только модель задачи. Записи хранятся в `data/tasks.json` (файл создаётся при первой записи). Поля: `id`, `businessId`, `status`, `title`, `topic`, `originalDescription`, `context`, `need`, `users`, `data`, `constraints`, `expectedResult`, `successCriteria`, `contact`, `interactionFormat`, `score`, `readinessLevel`, `missingFields`, `createdAt`, `updatedAt`.
+
+`GET /api/tasks` возвращает задачи, `POST /api/tasks` создаёт задачу. Для создания обязательны `businessId` и `title`. `businessId` хранится как ссылка-идентификатор, отдельная модель бизнеса пока не реализована. Статусы: `draft`, `confirmed`, `published`; уровни готовности: `draft`, `in_progress`, `ready`, `priority`; оценка ограничивается диапазоном 0–100.
+=======
+>>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65
 # AI Sana — главная и выбор роли
 
 Реализован только экран 1 из предоставленного изображения.
@@ -19,6 +32,7 @@
 - `previous-prototype/` — ранее сохранённый прототип, не подключён к главной.
 
 В `package.json` есть незавершённый конфликт слияния frontend/backend; он не разрешался в рамках этой задачи. До его разрешения используйте прямое открытие HTML. Backend-файлы не изменялись.
+<<<<<<< HEAD
 =======
 # Генератор уточняющих вопросов
 
@@ -81,3 +95,6 @@ Content-Type: application/json
 npm test
 ```
 >>>>>>> Stashed changes
+=======
+>>>>>>> 434bdf16a927b2fd6a200c1b5b9b9b3539e74b74
+>>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65
