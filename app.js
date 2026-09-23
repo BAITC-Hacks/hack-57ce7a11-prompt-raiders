@@ -87,7 +87,7 @@ function editor(task) {
  $('card-form').addEventListener('submit',event => {
   event.preventDefault(); if(!validate()) return;
   if(task.confirmedVersion !== fingerprint(read())) { $('card-errors').textContent = 'Подтвердите текущую версию карточки перед публикацией.'; $('confirm-card').focus(); return; }
-  task.publishedCard = {...read()}; task.publishedScore = rating(read()).score; task.publishedAt = new Date().toISOString();
+  task.publishedTopic = task.topic || ''; task.publishedCard = {...read()}; task.publishedScore = rating(read()).score; task.publishedAt = new Date().toISOString();
   const saved = persistCard('published');
   location.hash = `task/${encodeURIComponent(task.id)}`;
   if(saved) toast('Задача опубликована и доступна в общем каталоге.');
@@ -95,9 +95,38 @@ function editor(task) {
  refresh();
 }
 function publishedTasks() { return tasks.filter(t => t.publishedCard || t.status === 'published'); }
+const catalogState = { topic: '', level: '', sort: 'desc' };
+function catalogLevel(score) {
+ return score < 40 ? {key:'draft',label:'Черновик'} : score < 70 ? {key:'working',label:'Рабочая'} : score < 90 ? {key:'ready',label:'Готовая'} : {key:'priority',label:'Приоритетная'};
+}
+function catalogEntries() {
+ return publishedTasks().map(task => {
+  const card = task.publishedCard || cardOf(task);
+  const rawScore = task.publishedScore ?? task.score ?? 0;
+  const score = Number.isFinite(rawScore) ? Math.min(100,Math.max(0,rawScore)) : 0;
+  return {task,card,score,level:catalogLevel(score),topic:String(task.publishedTopic ?? task.topic ?? '').trim() || 'Без темы'};
+ });
+}
+function filterCatalog(entries,filters) {
+ return entries.filter(entry => (!filters.topic || entry.topic === filters.topic) && (!filters.level || entry.level.key === filters.level))
+  .sort((a,b) => (filters.sort === 'asc' ? a.score-b.score : b.score-a.score) || a.card.title.localeCompare(b.card.title,'ru'));
+}
 function renderCatalog() {
- const published = publishedTasks().sort((a,b) => (b.publishedScore ?? b.score ?? 0)-(a.publishedScore ?? a.score ?? 0));
- $('detail-content').innerHTML = `<p class="eyebrow">ОТКРЫТЫЙ КАТАЛОГ</p><h1 class="responses-heading" tabindex="-1">Задачи бизнеса</h1><p class="data-note">Все опубликованные задачи, включая задачи с низким рейтингом. Сначала — самый высокий балл.</p><div class="task-list">${published.map(task => {const card = task.publishedCard || cardOf(task),score = task.publishedScore ?? task.score ?? 0; return `<article class="task-item"><span class="state-badge published">Опубликована · ${score}/100</span><h3>${esc(card.title)}</h3><p>${esc(card.context)}</p><a class="small-button" href="#task/${encodeURIComponent(task.id)}">Открыть задачу →</a></article>`;}).join('') || empty('Опубликованных задач пока нет','Подтвердите карточку и опубликуйте её из редактора.')}</div>`;
+ const entries = catalogEntries();
+ const topics = [...new Set(entries.map(entry => entry.topic))].sort((a,b) => a.localeCompare(b,'ru'));
+ if (!topics.includes(catalogState.topic)) catalogState.topic = '';
+ $('detail-content').innerHTML = `<div class="catalog-hero"><div><p class="eyebrow">БИЗНЕС × КОМАНДЫ</p><h1 tabindex="-1">Найдите задачу,<br><em>которая вам интересна.</em></h1><p>Реальные потребности бизнеса и пространство для ваших решений.<br>Все опубликованные задачи открыты для бизнеса и команд.</p></div><div class="catalog-emblem" aria-hidden="true">✳</div></div><div class="catalog-toolbar"><div><label for="catalog-topic">Тема или отрасль</label><select id="catalog-topic"><option value="">Все темы</option>${topics.map(topic => `<option value="${esc(topic)}" ${catalogState.topic === topic ? 'selected' : ''}>${esc(topic)}</option>`).join('')}</select></div><div><label for="catalog-level">Уровень готовности</label><select id="catalog-level"><option value="">Все уровни</option>${[['draft','Черновик · 0–39'],['working','Рабочая · 40–69'],['ready','Готовая · 70–89'],['priority','Приоритетная · 90–100']].map(([key,label]) => `<option value="${key}" ${catalogState.level === key ? 'selected' : ''}>${label}</option>`).join('')}</select></div><div><label for="catalog-sort">Сортировка</label><select id="catalog-sort"><option value="desc" ${catalogState.sort === 'desc' ? 'selected' : ''}>Сначала высокий рейтинг</option><option value="asc" ${catalogState.sort === 'asc' ? 'selected' : ''}>Сначала низкий рейтинг</option></select></div><button id="catalog-reset" class="outline-button" type="button">Сбросить</button></div><div class="catalog-result-bar"><p id="catalog-count" role="status" aria-live="polite"></p><span>Низкий рейтинг — повод уточнить детали, а не ограничение доступа.</span></div><div id="catalog-grid" class="catalog-grid"></div>`;
+ const update = () => {
+  catalogState.topic = $('catalog-topic').value;
+  catalogState.level = $('catalog-level').value;
+  catalogState.sort = $('catalog-sort').value;
+  const visible = filterCatalog(entries,catalogState);
+  $('catalog-count').textContent = `Показано ${visible.length} из ${entries.length}`;
+  $('catalog-grid').innerHTML = visible.map(({task,card,score,level,topic}) => `<article class="catalog-card"><div class="catalog-card-top"><span class="topic-chip">${esc(topic)}</span>${task.demo ? '<span class="demo-tag">ДЕМО</span>' : ''}</div><div class="catalog-score"><strong>${score}<small>/100</small></strong><span class="readiness-badge ${level.key}">${level.label}</span></div><div class="score-track" aria-hidden="true"><span style="width:${score}%"></span></div><h2>${esc(card.title)}</h2><p class="catalog-summary">${esc((card.context || 'Описание пока не добавлено.').slice(0,190))}${card.context?.length > 190 ? '…' : ''}</p><div class="catalog-card-bottom">${score < 40 ? '<span class="clarification-badge">Требует уточнения</span>' : '<span class="open-label">Открыта для команд</span>'}<a class="small-button" href="#task/${encodeURIComponent(task.id)}" aria-label="Подробнее: ${esc(card.title)}">Подробнее <span aria-hidden="true">↗</span></a></div></article>`).join('') || (entries.length ? empty('По вашим фильтрам задач нет','Выберите другую тему или уровень готовности либо нажмите «Сбросить».') : empty('Каталог ждёт первых задач','Подтвердите и опубликуйте карточку в кабинете бизнеса — она появится здесь.'));
+ };
+ ['catalog-topic','catalog-level','catalog-sort'].forEach(id => $(id).addEventListener('change',update));
+ $('catalog-reset').addEventListener('click',() => { $('catalog-topic').value = ''; $('catalog-level').value = ''; $('catalog-sort').value = 'desc'; update(); });
+ update();
 }
 function renderPublished(rawId) {
  let id; try {id = decodeURIComponent(rawId || '');} catch {id = '';}
