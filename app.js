@@ -11,6 +11,49 @@ const CARD_FIELDS = [
  ['contact','Контакт','Email, ссылка HTTPS или телефон в международном формате.'],
  ['interaction','Формат взаимодействия','Как будут проходить консультации и обратная связь?']
 ];
+
+// Интерфейс появился раньше общей модели данных и использует короткие имена полей.
+// Здесь находится единственное место, где имена UI переводятся в имена backend.
+const API_TO_UI_FIELDS = {
+ context:'context', need:'need', users:'users', data:'materials', constraints:'constraints',
+ expectedResult:'outcome', successCriteria:'success', contact:'contact', interactionFormat:'interaction'
+};
+const FIELDS_TO_CHECK = Object.keys(API_TO_UI_FIELDS);
+const BUSINESS_ID = 'hackathon-demo-business';
+
+function questionText(question) {
+ return typeof question === 'string' ? question : String(question?.question ?? '');
+}
+function normalizeQuestion(question,index) {
+ if (question && typeof question === 'object') return question;
+ const fallbackFields = ['users','expectedResult','data','successCriteria','constraints'];
+ return {id:`question-${index+1}`,targetField:fallbackFields[index] || 'context',question:String(question ?? '')};
+}
+function uiCardFromApi(card = {}) {
+ const result = {title:String(card.title ?? '')};
+ Object.entries(API_TO_UI_FIELDS).forEach(([apiField,uiField]) => { result[uiField] = String(card[apiField] ?? ''); });
+ return result;
+}
+function apiCardFromUi(task,card) {
+ const payload = {
+  title:card.title, topic:task.topic || '', originalDescription:task.originalDescription || task.description || ''
+ };
+ Object.entries(API_TO_UI_FIELDS).forEach(([apiField,uiField]) => { payload[apiField] = card[uiField] || ''; });
+ return payload;
+}
+
+// Все запросы проходят через один помощник, чтобы пользователь видел настоящую
+// ошибку backend, а не неопределённое «что-то пошло не так».
+async function apiJson(path,options = {}) {
+ const response = await fetch(path,{
+  ...options,
+  headers:{'Content-Type':'application/json',...(options.headers || {})}
+ });
+ let body = {};
+ try { body = await response.json(); } catch { /* Ниже вернём понятную HTTP-ошибку. */ }
+ if (!response.ok) throw new Error(body.error || `Ошибка сервера (${response.status})`);
+ return body;
+}
 function cardOf(task) {
  return Object.fromEntries(CARD_FIELDS.map(([key]) => [key,String(task.card?.[key] ?? (key === 'title' ? task.title : key === 'context' ? task.description : '') ?? '')]));
 }
@@ -72,7 +115,9 @@ function editor(task) {
   task.score = rating(current).score;
   task.status = mode;
   if (mode === 'draft') task.confirmedVersion = null;
-  return save();
+  const saved = save();
+  void syncTaskToServer(task).catch(error => toast(`Локально сохранено, но сервер не ответил: ${error.message}`));
+  return saved;
  };
  $('card-form').addEventListener('input',() => { $('card-errors').textContent = ''; refresh(); });
  $('recalculate').addEventListener('click',() => { refresh(); toast('Рейтинг пересчитан по текущим полям.'); });
@@ -135,22 +180,36 @@ function renderPublished(rawId) {
  const card = task.publishedCard || cardOf(task);
  const info = rating(card), score = task.publishedScore ?? task.score ?? info.score;
  const level = catalogLevel(score);
- $('detail-content').innerHTML = `<a class="back-link" href="#catalog">← Общий каталог</a><div class="task-page-heading"><p class="eyebrow">ОПУБЛИКОВАННАЯ ЗАДАЧА</p><h1 tabindex="-1">${esc(card.title)}</h1><div class="task-page-meta"><span class="topic-chip">${esc(task.publishedTopic ?? task.topic ?? '') || 'Без темы'}</span><span class="readiness-badge ${level.key}">${level.label}</span>${score < 40 ? '<span class="clarification-badge">Требует уточнения</span>' : ''}<span id="offer-count">Предложений: ${task.responses.length}</span></div></div><div class="card-workspace"><section class="edit-panel full-editor task-full-card">${CARD_FIELDS.filter(([key]) => key !== 'title').map(([key,label]) => `<section><h2 class="published-label">${label}</h2><p class="published-value">${key === 'contact' && validLink(card[key]) ? `<a href="${esc(card[key])}" target="_blank" rel="noopener noreferrer">${esc(card[key])} ↗</a>` : esc(card[key]) || '<span class="not-specified">Пока не указано</span>'}</p></section>`).join('')}</section><aside class="rating-panel"><p class="eyebrow">ГОТОВНОСТЬ К РАБОТЕ</p><div class="rating-number">${score}<small>/ 100</small></div><span class="readiness-badge ${level.key}">${level.label}</span><progress max="100" value="${score}" aria-label="Рейтинг задачи"></progress><h2>Расшифровка рейтинга</h2>${score !== info.score ? `<p class="rating-disclaimer">Сохранённый ${task.demo ? 'демо-' : ''}балл: ${score}. По доступным полям рассчитано ${info.score}/100. Ниже — расчёт по этим полям.</p>` : ''}<div class="rating-sections">${info.sections.map(section => `<div><span>${section.label}</span><strong>${section.points} / ${section.max}</strong></div>`).join('')}</div><p class="field-help">Оценка полноты описания. Любая команда может отправить предложение при любом рейтинге.</p><a class="small-button offer-jump" href="#proposal-form" id="offer-jump">Предложить решение ↓</a></aside></div><section class="proposal-panel" aria-labelledby="proposal-title"><div class="proposal-heading"><div><p class="eyebrow">ДЛЯ СТУДЕНЧЕСКОЙ КОМАНДЫ</p><h2 id="proposal-title">Как вы решите эту задачу?</h2><p>Поделитесь идеей и планом. Решение о сотрудничестве принимает бизнес.</p></div><span class="proposal-star" aria-hidden="true">✳</span></div><div id="offer-success" class="offer-success" role="status" tabindex="-1" hidden></div><form id="proposal-form" novalidate><label for="offer-team">Название команды</label><input id="offer-team" maxlength="100" required autocomplete="organization" placeholder="Как называется ваша команда?"><label for="offer-idea">Идея решения</label><textarea id="offer-idea" rows="4" maxlength="3000" required placeholder="Какой подход вы предлагаете и какую потребность он закрывает?"></textarea><label for="offer-plan">Краткий план</label><textarea id="offer-plan" rows="4" maxlength="3000" required placeholder="Опишите основные этапы реализации."></textarea><div class="offer-fields"><div><label for="offer-deadline">Предполагаемый срок</label><input id="offer-deadline" maxlength="200" required placeholder="Например: 2 недели после согласования"></div><div><label for="offer-link">Ссылка на прототип</label><input id="offer-link" type="url" maxlength="2000" required placeholder="https://…"></div></div><p id="offer-error" class="form-error" role="alert"></p><div class="proposal-footer"><p>Задача остаётся открытой для других команд.<br>Количество предложений не ограничено.</p><button class="role-button business-button" type="submit">Отправить предложение ↗</button></div><p class="data-note">Демо: предложение сохраняется в этом браузере и отображается в кабинете бизнеса. Серверная отправка ещё не подключена.</p></form></section>`;
+ $('detail-content').innerHTML = `<a class="back-link" href="#catalog">← Общий каталог</a><div class="task-page-heading"><p class="eyebrow">ОПУБЛИКОВАННАЯ ЗАДАЧА</p><h1 tabindex="-1">${esc(card.title)}</h1><div class="task-page-meta"><span class="topic-chip">${esc(task.publishedTopic ?? task.topic ?? '') || 'Без темы'}</span><span class="readiness-badge ${level.key}">${level.label}</span>${score < 40 ? '<span class="clarification-badge">Требует уточнения</span>' : ''}<span id="offer-count">Предложений: ${task.responses.length}</span></div></div><div class="card-workspace"><section class="edit-panel full-editor task-full-card">${CARD_FIELDS.filter(([key]) => key !== 'title').map(([key,label]) => `<section><h2 class="published-label">${label}</h2><p class="published-value">${key === 'contact' && validLink(card[key]) ? `<a href="${esc(card[key])}" target="_blank" rel="noopener noreferrer">${esc(card[key])} ↗</a>` : esc(card[key]) || '<span class="not-specified">Пока не указано</span>'}</p></section>`).join('')}</section><aside class="rating-panel"><p class="eyebrow">ГОТОВНОСТЬ К РАБОТЕ</p><div class="rating-number">${score}<small>/ 100</small></div><span class="readiness-badge ${level.key}">${level.label}</span><progress max="100" value="${score}" aria-label="Рейтинг задачи"></progress><h2>Расшифровка рейтинга</h2>${score !== info.score ? `<p class="rating-disclaimer">Сохранённый ${task.demo ? 'демо-' : ''}балл: ${score}. По доступным полям рассчитано ${info.score}/100. Ниже — расчёт по этим полям.</p>` : ''}<div class="rating-sections">${info.sections.map(section => `<div><span>${section.label}</span><strong>${section.points} / ${section.max}</strong></div>`).join('')}</div><p class="field-help">Оценка полноты описания. Любая команда может отправить предложение при любом рейтинге.</p><a class="small-button offer-jump" href="#proposal-form" id="offer-jump">Предложить решение ↓</a></aside></div><section class="proposal-panel" aria-labelledby="proposal-title"><div class="proposal-heading"><div><p class="eyebrow">ДЛЯ СТУДЕНЧЕСКОЙ КОМАНДЫ</p><h2 id="proposal-title">Как вы решите эту задачу?</h2><p>Поделитесь идеей и планом. Решение о сотрудничестве принимает бизнес.</p></div><span class="proposal-star" aria-hidden="true">✳</span></div><div id="offer-success" class="offer-success" role="status" tabindex="-1" hidden></div><form id="proposal-form" novalidate><label for="offer-team">Название команды</label><input id="offer-team" maxlength="100" required autocomplete="organization" placeholder="Как называется ваша команда?"><label for="offer-idea">Идея решения</label><textarea id="offer-idea" rows="4" maxlength="3000" required placeholder="Какой подход вы предлагаете и какую потребность он закрывает?"></textarea><label for="offer-plan">Краткий план</label><textarea id="offer-plan" rows="4" maxlength="3000" required placeholder="Опишите основные этапы реализации."></textarea><div class="offer-fields"><div><label for="offer-deadline">Предполагаемый срок</label><input id="offer-deadline" maxlength="200" required placeholder="Например: 2 недели после согласования"></div><div><label for="offer-link">Ссылка на прототип</label><input id="offer-link" type="url" maxlength="2000" required placeholder="https://…"></div></div><p id="offer-error" class="form-error" role="alert"></p><div class="proposal-footer"><p>Задача остаётся открытой для других команд.<br>Количество предложений не ограничено.</p><button class="role-button business-button" type="submit">Отправить предложение ↗</button></div><p class="data-note">Предложение сохраняется в общей JSON-базе и отображается в кабинете бизнеса.</p></form></section>`;
  $('offer-jump').addEventListener('click',event => { event.preventDefault(); $('offer-team').focus(); $('proposal-form').scrollIntoView({block:'start'}); });
  $('proposal-form').addEventListener('input',event => { event.target.removeAttribute('aria-invalid'); $('offer-error').textContent = ''; });
- $('proposal-form').addEventListener('submit',event => {
+ $('proposal-form').addEventListener('submit',async event => {
   event.preventDefault();
   const values = Object.fromEntries(['team','idea','plan','deadline','link'].map(key => [key,$(`offer-${key}`).value.trim()]));
   const labels = {team:'название команды',idea:'идею решения',plan:'краткий план',deadline:'предполагаемый срок',link:'ссылку на прототип'};
   const missing = Object.keys(values).find(key => !values[key]);
   const errorKey = missing || (!validLink(values.link) ? 'link' : null);
   if(errorKey) { $('offer-error').textContent = missing ? `Укажите ${labels[missing]}.` : 'Укажите корректную ссылку на прототип, начинающуюся с http:// или https://.'; $(`offer-${errorKey}`).setAttribute('aria-invalid','true'); $(`offer-${errorKey}`).focus(); return; }
-  const response = {...values,id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9),taskId:task.id,status:'pending',createdAt:new Date().toISOString()};
-  task.responses.push(response);
-  if(!save()) { task.responses.pop(); $('offer-error').textContent = 'Не удалось сохранить предложение. Ваш текст оставлен в форме. Освободите место в браузере и повторите отправку.'; return; }
-  $('offer-count').textContent = `Предложений: ${task.responses.length}`;
-  $('offer-success').innerHTML = `<strong>Предложение сохранено</strong><span class="state-badge pending">На рассмотрении</span><p>Команда «${esc(values.team)}»: предложение добавлено к задаче в этом браузере. Оно доступно в кабинете бизнеса. Можно отправить ещё одно предложение.</p>`;
-  $('offer-success').hidden = false; $('proposal-form').reset(); $('offer-success').focus();
+  const submit = $('proposal-form').querySelector('[type="submit"]');
+  submit.disabled = true; $('offer-error').textContent = 'Сохраняем предложение…';
+  try {
+   if (!task.serverPersisted) throw new Error('Эта локальная демо-задача не сохранена на сервере. Создайте новую задачу через мастер.');
+   const {team} = await apiJson('/api/teams',{method:'POST',body:JSON.stringify({name:values.team})});
+   const {proposal} = await apiJson('/api/proposals',{method:'POST',body:JSON.stringify({
+    taskId:task.id,teamId:team.id,idea:values.idea,plan:values.plan,
+    estimatedTerm:values.deadline,prototypeUrl:values.link,status:'pending'
+   })});
+   task.responses.push({...values,id:proposal.id,serverPersisted:true,taskId:task.id,status:proposal.status,createdAt:proposal.createdAt});
+   save();
+   $('offer-count').textContent = `Предложений: ${task.responses.length}`;
+   $('offer-success').innerHTML = `<strong>Предложение сохранено</strong><span class="state-badge pending">На рассмотрении</span><p>Команда «${esc(values.team)}»: предложение записано в общую базу и доступно бизнесу.</p>`;
+   $('offer-success').hidden = false; $('proposal-form').reset(); $('offer-success').focus();
+   $('offer-error').textContent = '';
+  } catch (error) {
+   $('offer-error').textContent = error.message;
+  } finally {
+   submit.disabled = false;
+  }
  });
 }
 const $ = id => document.getElementById(id);
@@ -162,6 +221,73 @@ try { const saved = JSON.parse(localStorage.getItem(KEY)); if (Array.isArray(sav
 let timer;
 function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(timer); timer = setTimeout(() => { $('toast').hidden = true; },4000); }
 function save() { try { localStorage.setItem(KEY,JSON.stringify(tasks)); return true; } catch { toast('Не удалось сохранить в браузере. Данные доступны до перезагрузки.'); return false; } }
+
+// Сохраняем редактор одновременно в localStorage (быстрый UI) и в JSON-базу.
+// Если сервер временно недоступен, локальная копия не теряется.
+async function syncTaskToServer(task) {
+ if (!task.serverPersisted || task.demo) return;
+ const card = cardOf(task);
+ await apiJson(`/api/tasks/${encodeURIComponent(task.id)}`,{
+  method:'PATCH',
+  body:JSON.stringify({...apiCardFromUi(task,card),status:task.status})
+ });
+ const {rating:serverRating} = await apiJson('/api/ratings/evaluate',{
+  method:'POST',body:JSON.stringify({taskId:task.id})
+ });
+ task.score = serverRating.total;
+ task.readinessLevel = serverRating.level;
+ save();
+}
+
+function taskFromApi(apiTask,clarifications,responses) {
+ const card = uiCardFromApi(apiTask);
+ const published = apiTask.status === 'published';
+ return {
+  id:apiTask.id,
+  serverPersisted:true,
+  title:apiTask.title,
+  description:apiTask.originalDescription || apiTask.context,
+  originalDescription:apiTask.originalDescription,
+  topic:apiTask.topic,
+  status:apiTask.status,
+  score:apiTask.score,
+  readinessLevel:apiTask.readinessLevel,
+  card,
+  clarifications,
+  responses,
+  ...(published ? {publishedCard:{...card},publishedTopic:apiTask.topic,publishedScore:apiTask.score} : {})
+ };
+}
+
+// При запуске поднимаем данные из файлов второго участника. Это делает каталог
+// общим для разных браузеров, а localStorage остаётся резервной копией демо.
+async function syncFromServer() {
+ try {
+  const [taskData,questionData,teamData,proposalData] = await Promise.all([
+   apiJson('/api/tasks'),apiJson('/api/clarifying-questions'),apiJson('/api/teams'),apiJson('/api/proposals')
+  ]);
+  const teamNames = new Map(teamData.teams.map(team => [team.id,team.name]));
+  for (const apiTask of taskData.tasks) {
+   const clarifications = questionData.questions
+    .filter(item => item.taskId === apiTask.id)
+    .map(item => ({id:item.id,targetField:item.targetField,question:item.question,answer:item.answer}));
+   const responses = proposalData.proposals
+    .filter(item => item.taskId === apiTask.id)
+    .map(item => ({
+     id:item.id,serverPersisted:true,team:teamNames.get(item.teamId) || 'Команда',idea:item.idea,plan:item.plan,
+     deadline:item.estimatedTerm,link:item.prototypeUrl,status:item.status,createdAt:item.createdAt
+    }));
+   const incoming = taskFromApi(apiTask,clarifications,responses);
+   const index = tasks.findIndex(item => item.id === apiTask.id);
+   if (index < 0) tasks.push(incoming);
+   else tasks[index] = {...tasks[index],...incoming,serverPersisted:true,responses:responses.length ? responses : tasks[index].responses};
+  }
+  save();
+  route(false);
+ } catch (error) {
+  console.warn('Server data sync failed:',error.message);
+ }
+}
 function empty(title,text) { return `<div class="empty-box"><h3>${title}</h3><p>${text}</p></div>`; }
 function renderBusiness() {
   $('total-tasks').textContent = tasks.length;
@@ -171,8 +297,8 @@ function renderBusiness() {
   $('load-demo').textContent = tasks.some(t => t.demo) ? 'Демо-задачи загружены' : 'Загрузить демо-задачи';
   $('business-tasks').innerHTML = tasks.length ? tasks.map(t => `<article class="task-item"><div class="task-top"><span class="state-badge ${t.status}">${statusLabels[t.status]}</span>${t.demo ? '<span class="demo-tag">ДЕМО-ПРИМЕР</span>' : ''}</div><h3>${esc(t.title)}</h3><p>${esc(t.description)}</p><div class="task-meta"><span>Рейтинг: <strong>${Number.isFinite(t.score) ? `${t.score}/100` : 'ещё не рассчитан'}</strong></span><span>Откликов: <strong>${t.responses.length}</strong></span></div><div class="task-actions"><a class="small-button" href="#edit/${encodeURIComponent(t.id)}">Редактировать</a><a class="small-button" href="#responses/${encodeURIComponent(t.id)}">Посмотреть отклики (${t.responses.length})</a></div></article>`).join('') : `${empty('Пока нет задач','Создайте первый черновик или загрузите демо-примеры, чтобы посмотреть кабинет.')}<p><a class="small-button" href="#draft">+ Создать задачу</a></p>`;
 }
-// Local demo adapter. The business-logic owner can replace this with an API call.
-function setProposalDecision(task,index,decision) {
+// Сначала фиксируем решение в общей базе, затем обновляем локальный экран.
+async function setProposalDecision(task,index,decision) {
  if (!['pending','accepted','rejected'].includes(decision) || !task.responses[index]) return false;
  const proposal = task.responses[index];
  const previousStatus = proposal.status;
@@ -180,6 +306,16 @@ function setProposalDecision(task,index,decision) {
  proposal.status = decision;
  proposal.decidedAt = decision === 'pending' ? null : new Date().toISOString();
  if (!save()) { proposal.status = previousStatus; proposal.decidedAt = previousTime; return false; }
+ try {
+  if (proposal.serverPersisted) {
+   await apiJson(`/api/proposals/${encodeURIComponent(proposal.id)}`,{
+    method:'PATCH',body:JSON.stringify({status:decision})
+   });
+  }
+ } catch (error) {
+  proposal.status = previousStatus; proposal.decidedAt = previousTime; save();
+  throw error;
+ }
  return true;
 }
 function responses(task) {
@@ -188,12 +324,20 @@ function responses(task) {
  const counts = {pending:0,accepted:0,rejected:0};
  task.responses.forEach(response => counts[statusOf(response)]++);
  $('detail-content').innerHTML = `<div class="response-page-heading"><div><p class="eyebrow">РЕШЕНИЕ ПРИНИМАЕТ БИЗНЕС</p><h1 class="responses-heading" tabindex="-1">Предложения команд</h1><p class="dashboard-subtitle">${esc(task.title)}</p></div>${task.publishedCard || task.status === 'published' ? `<a class="small-button" href="#task/${encodeURIComponent(task.id)}">Посмотреть задачу ↗</a>` : ''}</div><div class="decision-summary"><div><strong>${task.responses.length}</strong><span>Всего предложений</span></div><div><strong>${counts.pending}</strong><span>На рассмотрении</span></div><div><strong>${counts.accepted}</strong><span>Принято</span></div><div><strong>${counts.rejected}</strong><span>Отклонено</span></div></div><p class="decision-hint">Можно принять одну или несколько команд, отклонить все предложения или вернуться к решению позже. Статус меняется только по вашему нажатию.</p><p id="decision-error" class="form-error" role="alert"></p><div id="decision-list" class="task-list">${task.responses.length ? task.responses.map((r,index) => {const status = statusOf(r);return `<article class="task-item proposal-review"><div class="review-top"><div><span class="eyebrow">ПРЕДЛОЖЕНИЕ ${String(index+1).padStart(2,'0')}</span><h2>${esc(r.team)}</h2></div><span class="state-badge ${status}">${labels[status]}</span></div><div class="review-content"><section><h3>Идея решения</h3><p>${esc(r.idea)}</p></section><section><h3>План реализации</h3><p>${esc(r.plan)}</p></section><div class="review-details"><section><h3>Предполагаемый срок</h3><p>${esc(r.deadline) || 'Не указан'}</p></section><section><h3>Прототип</h3><p>${validLink(r.link) ? `<a class="proposal-link" href="${esc(r.link)}" target="_blank" rel="noopener noreferrer">${esc(r.link)} ↗</a>` : 'Не указан'}</p></section></div></div><div class="decision-actions"><button type="button" class="accept-button" data-index="${index}" data-decision="accepted" ${status === 'accepted' ? 'disabled' : ''} aria-label="Принять: ${esc(r.team)}">✓ Принять</button><button type="button" class="reject-button" data-index="${index}" data-decision="rejected" ${status === 'rejected' ? 'disabled' : ''} aria-label="Отклонить: ${esc(r.team)}">Отклонить</button>${status !== 'pending' ? `<button type="button" class="defer-button" data-index="${index}" data-decision="pending" aria-label="Вернуть на рассмотрение: ${esc(r.team)}">Вернуть на рассмотрение</button>` : '<span class="defer-note">Можно оставить на рассмотрении</span>'}</div></article>`;}).join('') : empty('Предложений пока нет','После отправки предложения командой оно появится в этом списке. Никакого автоматического выбора не происходит.')}</div><p class="data-note">Демо без авторизации: решения сохраняются в этом браузере. Серверное управление статусами подключает владелец бизнес-логики.</p>`;
- $('decision-list').addEventListener('click',event => {
+ const storageNote = $('detail-content').querySelector('.data-note');
+ if (storageNote) storageNote.textContent = 'Решения сохраняются в общей JSON-базе и доступны после перезапуска сервера.';
+ $('decision-list').addEventListener('click',async event => {
   const button = event.target.closest('[data-decision]');
   if (!button || button.disabled) return;
   const index = Number(button.dataset.index), decision = button.dataset.decision;
   const proposal = task.responses[index]; if (!proposal) return;
-  if (!setProposalDecision(task,index,decision)) { $('decision-error').textContent = 'Не удалось сохранить решение. Статус не изменён. Повторите попытку.'; return; }
+  button.disabled = true;
+  try {
+   if (!await setProposalDecision(task,index,decision)) throw new Error('Не удалось сохранить решение.');
+  } catch (error) {
+   $('decision-error').textContent = `${error.message} Статус не изменён.`;
+   button.disabled = false; return;
+  }
   responses(task);
   toast(`«${proposal.team}»: ${labels[decision]}.`);
   const next = $('decision-list').querySelector(`[data-index="${index}"]:not(:disabled)`);
@@ -219,7 +363,7 @@ function route(focus = true) {
   $('business-screen').hidden = name !== 'business';
   $('detail-screen').hidden = !['draft','edit','responses','catalog','task'].includes(name);
   $('navigation-status').hidden = true;
-  $('navigation-status').textContent = 'Общий каталог ещё не подключён.';
+  $('navigation-status').textContent = 'Общий каталог подключён к данным приложения.';
   if (name === 'catalog') renderCatalog();
   else if (name === 'task') renderPublished(rawId);
   else if (name === 'business') renderBusiness();
@@ -251,8 +395,9 @@ const WIZARD_KEY = 'ai-sana-draft-wizard-v1';
 let wizard = {description:'',topic:'',questions:[],answers:[],phase:'input',source:'',analyzedText:''};
 try {
   const value = JSON.parse(localStorage.getItem(WIZARD_KEY));
-  if (value && typeof value.description === 'string' && typeof value.topic === 'string' && Array.isArray(value.questions) && value.questions.length <= 10 && value.questions.every(q => typeof q === 'string') && Array.isArray(value.answers) && value.answers.every(a => typeof a === 'string')) {
+  if (value && typeof value.description === 'string' && typeof value.topic === 'string' && Array.isArray(value.questions) && value.questions.length <= 5 && value.questions.every(q => typeof q === 'string' || q && typeof q.question === 'string') && Array.isArray(value.answers) && value.answers.every(a => typeof a === 'string')) {
     wizard = {...wizard,...value};
+    wizard.questions = wizard.questions.map(normalizeQuestion);
     if (wizard.phase !== 'questions' || wizard.questions.length < 3) wizard.phase = 'input';
   }
 } catch { /* Draft remains available in memory. */ }
@@ -277,7 +422,7 @@ function inputHTML() {
   return `<form id="analysis-form" novalidate><label for="draft-description">Описание задачи</label><textarea id="draft-description" rows="9" maxlength="4000" placeholder="Например: у нас кофейня, заказы поступают в мессенджер и иногда теряются. Хотим упростить приём заказов." required>${esc(wizard.description)}</textarea><label for="draft-topic">Тема или отрасль</label><input id="draft-topic" maxlength="100" placeholder="Например: общепит, образование, логистика" value="${esc(wizard.topic)}" required><p class="data-note">Для анализа нужно не менее 20 символов в описании. Текст будет отправлен в подключённый сервис анализа.</p><div id="analysis-loading" class="analysis-loading" role="status" hidden><span class="spinner" aria-hidden="true"></span>AI анализирует задачу и готовит вопросы…</div><p id="analysis-error" class="form-error" role="alert" hidden></p><div class="wizard-actions"><button id="analyze-button" class="role-button business-button" type="submit">Проанализировать <span>✳</span></button><button id="standard-questions" class="outline-button" type="button" hidden>Использовать стандартные вопросы</button></div></form>`;
 }
 function questionsHTML() {
-  return `<div class="notice-panel">${wizard.source === 'ai' ? 'Вопросы подготовлены AI.' : 'Используются стандартные вопросы, без AI.'}</div><details class="draft-summary"><summary>Ваше описание · ${esc(wizard.topic)}</summary><p>${esc(wizard.description)}</p></details><form id="questions-form" novalidate>${wizard.questions.map((q,i) => `<label for="answer-${i}"><span class="question-number">0${i+1}</span> ${esc(q)}</label><textarea id="answer-${i}" rows="3" maxlength="2000" required placeholder="Ваш ответ…">${esc(wizard.answers[i] || '')}</textarea>`).join('')}<p id="answers-error" class="form-error" role="alert"></p><div class="wizard-actions"><button class="role-button business-button" type="submit">Сформировать карточку →</button><button class="outline-button" id="back-description" type="button">← Вернуться к описанию</button></div></form>`;
+  return `<div class="notice-panel">${wizard.source === 'ai' ? 'Вопросы подготовлены AI.' : 'Используются безопасные вопросы без внешнего AI.'}</div><details class="draft-summary"><summary>Ваше описание · ${esc(wizard.topic)}</summary><p>${esc(wizard.description)}</p></details><form id="questions-form" novalidate>${wizard.questions.map((q,i) => `<label for="answer-${i}"><span class="question-number">0${i+1}</span> ${esc(questionText(q))}</label><textarea id="answer-${i}" rows="3" maxlength="2000" required placeholder="Ваш ответ…">${esc(wizard.answers[i] || '')}</textarea>`).join('')}<p id="answers-error" class="form-error" role="alert"></p><div class="wizard-actions"><button id="form-card-button" class="role-button business-button" type="submit">Сформировать карточку →</button><button class="outline-button" id="back-description" type="button">← Вернуться к описанию</button></div></form>`;
 }
 async function analyze(event) {
   event.preventDefault();
@@ -296,13 +441,17 @@ async function analyze(event) {
   $('analysis-loading').hidden = false; $('analysis-form').setAttribute('aria-busy','true');
   ['analyze-button','draft-description','draft-topic'].forEach(id => { $(id).disabled = true; });
   try {
-    const response = await fetch('/api/questions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:`Тема: ${wizard.topic.trim()}\n${wizard.description.trim()}`}),signal:controller.signal});
+    const response = await fetch('/api/questions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      description:wizard.description.trim(),
+      industry:wizard.topic.trim(),
+      knownFields:{context:wizard.description.trim()},
+      fieldsToCheck:FIELDS_TO_CHECK
+    }),signal:controller.signal});
     if (!response.ok) throw new Error('service');
     const body = await response.json();
-    if (!Array.isArray(body.questions) || body.questions.length < 3 || body.questions.length > 10 || body.questions.some(q => typeof q !== 'string' || !q.trim() || q.length > 1000) || new Set(body.questions.map(q => q.trim())).size !== body.questions.length) throw new Error('format');
+    if (!Array.isArray(body.questions) || body.questions.length < 3 || body.questions.length > 5 || body.questions.some(q => !q || typeof q.question !== 'string' || !q.question.trim() || typeof q.targetField !== 'string') || new Set(body.questions.map(q => q.targetField)).size !== body.questions.length) throw new Error('format');
     if (version !== analysisVersion) return;
-    if (body.mode === 'fallback') throw new Error('fallback');
-    wizard.questions = body.questions.map(q => q.trim()); wizard.answers = wizard.questions.map(() => ''); wizard.source = body.mode === 'ai' ? 'ai' : 'standard'; wizard.phase = 'questions'; wizard.analyzedText = fingerprint;
+    wizard.questions = body.questions.map(normalizeQuestion); wizard.answers = wizard.questions.map(() => ''); wizard.source = body.mode === 'ai' ? 'ai' : 'standard'; wizard.phase = 'questions'; wizard.analyzedText = fingerprint;
     storeWizard(); renderDraft(); $('answer-0').focus();
   } catch (error) {
     if (version !== analysisVersion || location.hash !== '#draft') return;
@@ -319,22 +468,68 @@ async function analyze(event) {
 }
 function standardQuestions() {
   wizard.questions = [
-    `Кто будет пользоваться решением в сфере «${wizard.topic.trim()}» и какую проблему нужно решить?`,
-    'Какой результат вы ожидаете и по каким измеримым признакам поймёте, что задача решена?',
-    'Какие данные и материалы доступны? Какие есть ограничения, сроки и способ связи с бизнесом?'
+    {id:'question-1',targetField:'users',question:`Кто будет пользоваться решением в сфере «${wizard.topic.trim()}» и какую проблему нужно решить?`},
+    {id:'question-2',targetField:'expectedResult',question:'Какой конкретный результат должна подготовить команда?'},
+    {id:'question-3',targetField:'successCriteria',question:'По каким измеримым признакам вы поймёте, что задача решена?'}
   ];
   wizard.answers = ['','','']; wizard.source = 'standard'; wizard.phase = 'questions'; wizard.analyzedText = JSON.stringify([wizard.description.trim(),wizard.topic.trim()]);
   storeWizard(); renderDraft(); $('answer-0').focus();
 }
-function formCard(event) {
+async function formCard(event) {
   event.preventDefault();
   wizard.answers = wizard.questions.map((_,i) => $(`answer-${i}`).value.trim());
   const missing = wizard.answers.findIndex(a => a.length < 2);
   if (missing !== -1) { $('answers-error').textContent = 'Ответьте на каждый вопрос: минимум два символа. Если сведений нет, укажите «Пока неизвестно».'; $(`answer-${missing}`).focus(); return; }
-  const task = {id:Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8),title:wizard.description.trim().split(/[.!?\n]/)[0].slice(0,120) || wizard.topic.trim(),description:wizard.description.trim(),topic:wizard.topic.trim(),clarifications:wizard.questions.map((question,i) => ({question,answer:wizard.answers[i]})),status:'draft',score:null,responses:[]};
-  tasks.unshift(task); const saved = save();
-  wizard = {description:'',topic:'',questions:[],answers:[],phase:'input',source:'',analyzedText:''}; storeWizard();
-  location.hash = `edit/${encodeURIComponent(task.id)}`;
-  if (saved) toast('Карточка собрана из ваших ответов. Проверьте и отредактируйте её.');
+  const button = $('form-card-button');
+  button.disabled = true; $('answers-error').textContent = 'AI формирует карточку и сохраняет данные…';
+  const questions = wizard.questions.map(normalizeQuestion);
+  const clarifications = questions.map((question,i) => ({...question,answer:wizard.answers[i]}));
+  try {
+   // AI-операция 2 получает исходное описание и те же вопросы/ответы,
+   // которые пользователь только что видел на экране.
+   const cardResult = await apiJson('/api/cards',{method:'POST',body:JSON.stringify({
+    description:wizard.description.trim(),industry:wizard.topic.trim(),
+    knownFields:{context:wizard.description.trim()},fieldsToCheck:FIELDS_TO_CHECK,
+    questions,answers:questions.map((question,i) => ({questionId:question.id,answer:wizard.answers[i]}))
+   })});
+   const apiCard = cardResult.card;
+   const {task:storedTask} = await apiJson('/api/tasks',{method:'POST',body:JSON.stringify({
+    businessId:BUSINESS_ID,status:'draft',...apiCard
+   })});
+
+   // Пишем вопросы последовательно: файловая JSON-база не должна получить
+   // несколько одновременных записей в один и тот же файл.
+   for (const item of clarifications) {
+    try {
+     await apiJson('/api/clarifying-questions',{method:'POST',body:JSON.stringify({
+      taskId:storedTask.id,targetField:item.targetField,question:item.question,answer:item.answer,
+      source:wizard.source === 'ai' ? 'ai' : 'local_stub'
+     })});
+    } catch (error) { console.warn('Question save failed:',error.message); }
+   }
+
+   let serverScore = 0;
+   try {
+    const {rating:serverRating} = await apiJson('/api/ratings/evaluate',{
+     method:'POST',body:JSON.stringify({taskId:storedTask.id})
+    });
+    serverScore = serverRating.total;
+   } catch (error) { console.warn('Rating save failed:',error.message); }
+
+   const card = uiCardFromApi(apiCard);
+   const task = {
+    id:storedTask.id,serverPersisted:true,title:card.title,description:wizard.description.trim(),
+    originalDescription:wizard.description.trim(),topic:wizard.topic.trim(),card,clarifications,
+    status:'draft',score:serverScore,responses:[]
+   };
+   tasks.unshift(task); const saved = save();
+   wizard = {description:'',topic:'',questions:[],answers:[],phase:'input',source:'',analyzedText:''}; storeWizard();
+   location.hash = `edit/${encodeURIComponent(task.id)}`;
+   if (saved) toast(`Карточка сформирована (${cardResult.mode === 'ai' ? 'AI' : 'безопасный fallback'}) и сохранена.`);
+  } catch (error) {
+   $('answers-error').textContent = `Не удалось сформировать карточку: ${error.message}`;
+   button.disabled = false;
+  }
 }
 route(false);
+void syncFromServer();

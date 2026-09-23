@@ -337,6 +337,64 @@ const server = createServer(async (request, response) => {
       });
     }
 
+    // Редактор карточки обновляет уже созданную задачу, не создавая дубликат.
+    // Разрешаем менять только поля модели, которые действительно есть в карточке.
+    const taskUpdateMatch = request.url?.match(/^\/api\/tasks\/([^/]+)$/u);
+    if (request.method === "PATCH" && taskUpdateMatch) {
+      const taskId = decodeURIComponent(taskUpdateMatch[1]);
+      const body = await readJson(request);
+      if (body.status !== undefined && !TASK_STATUSES.includes(body.status)) {
+        return sendJson(response, 400, {
+          error: "Статус должен быть draft, confirmed или published.",
+        });
+      }
+
+      const textFields = [
+        "title",
+        "topic",
+        "originalDescription",
+        "context",
+        "need",
+        "users",
+        "data",
+        "constraints",
+        "expectedResult",
+        "successCriteria",
+        "contact",
+        "interactionFormat",
+      ];
+      const updates = Object.fromEntries(
+        textFields
+          .filter((field) => body[field] !== undefined)
+          .map((field) => [field, normalizeText(body[field])]),
+      );
+      if (body.status !== undefined) updates.status = body.status;
+      updates.updatedAt = new Date().toISOString();
+
+      const task = await updateRecord("tasks", taskId, updates);
+      return task
+        ? sendJson(response, 200, { task })
+        : sendJson(response, 404, { error: "Задача не найдена." });
+    }
+
+    // Бизнес может принять, отклонить или вернуть предложение на рассмотрение.
+    const proposalUpdateMatch = request.url?.match(/^\/api\/proposals\/([^/]+)$/u);
+    if (request.method === "PATCH" && proposalUpdateMatch) {
+      const proposalId = decodeURIComponent(proposalUpdateMatch[1]);
+      const body = await readJson(request);
+      if (!PROPOSAL_STATUSES.includes(body.status)) {
+        return sendJson(response, 400, { error: "Недопустимый статус предложения." });
+      }
+      const proposal = await updateRecord("proposals", proposalId, {
+        status: body.status,
+        businessComment: normalizeText(body.businessComment, 4000),
+        updatedAt: new Date().toISOString(),
+      });
+      return proposal
+        ? sendJson(response, 200, { proposal })
+        : sendJson(response, 404, { error: "Предложение не найдено." });
+    }
+
     if (request.method === "GET") return await serveStatic(request, response);
     return sendJson(response, 405, { error: "Метод не поддерживается" });
   } catch (error) {
