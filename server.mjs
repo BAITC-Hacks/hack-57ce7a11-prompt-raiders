@@ -2,18 +2,18 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  generateLocalCards,
-  normalizeText,
-  validateAnswers,
-} from "./src/generator.mjs";
-import { generateAiCards, generateAiQuestions } from "./src/openai.mjs";
-import { DEMO_QUESTION_INPUT } from "./src/demo-data.mjs";
+import { generateAiQuestions, generateAiTaskCard } from "./src/openai.mjs";
+import { DEMO_CARD_INPUT, DEMO_QUESTION_INPUT } from "./src/demo-data.mjs";
 import {
   generateTemplateQuestions,
   prepareQuestionInput,
   validateAiQuestionResult,
 } from "./src/question-generator.mjs";
+import {
+  generateTemplateCard,
+  prepareCardInput,
+  validateAiCardResult,
+} from "./src/card-generator.mjs";
 import { listTasks, saveTask } from "./src/database.mjs";
 import { createTask, TASK_STATUSES } from "./src/models.mjs";
 
@@ -94,30 +94,39 @@ function handleDemoQuestions(response) {
   });
 }
 
-async function handleCards(request, response) {
+async function handleCard(request, response) {
   const body = await readJson(request);
-  const task = normalizeText(body.task);
-  const questions = Array.isArray(body.questions) ? body.questions.map((item) => normalizeText(item, 500)) : [];
-  const answers = Array.isArray(body.answers) ? body.answers.map((item) => normalizeText(item, 2000)) : [];
-  if (task.length < 20 || !validateAnswers(questions, answers)) {
-    return sendJson(response, 400, { error: "Нужно описание задачи и три заполненных ответа." });
-  }
+  const input = prepareCardInput(body);
 
   if (!apiKey) {
-    return sendJson(response, 200, { cards: generateLocalCards(task, questions, answers), mode: "demo" });
+    return sendJson(response, 200, {
+      ...generateTemplateCard(body),
+      mode: "demo",
+      notice: "OPENAI_API_KEY не задан — карточка собрана безопасным локальным генератором.",
+    });
   }
 
   try {
-    const cards = await generateAiCards({ apiKey, model, task, questions, answers });
-    return sendJson(response, 200, { cards, mode: "ai" });
+    const aiResult = await generateAiTaskCard({ apiKey, model, input });
+    const result = validateAiCardResult(aiResult, body);
+    return sendJson(response, 200, { ...result, mode: "ai" });
   } catch (error) {
-    console.error("Card generation failed:", error.message);
+    console.error("Task card generation failed:", error.message);
     return sendJson(response, 200, {
-      cards: generateLocalCards(task, questions, answers),
+      ...generateTemplateCard(body),
       mode: "fallback",
-      notice: "ИИ временно недоступен — карточки собраны локальным генератором.",
+      notice: "ИИ временно недоступен или вернул неподтверждённые данные — использована локальная карточка.",
     });
   }
+}
+
+// Демо-маршрут операции 2 позволяет подключать интерфейс до готовности формы.
+function handleDemoCard(response) {
+  return sendJson(response, 200, {
+    input: DEMO_CARD_INPUT,
+    result: generateTemplateCard(DEMO_CARD_INPUT),
+    mode: "demo",
+  });
 }
 
 async function serveStatic(request, response) {
@@ -146,6 +155,7 @@ async function serveStatic(request, response) {
 const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/api/questions/demo") return handleDemoQuestions(response);
+    if (request.method === "GET" && request.url === "/api/cards/demo") return handleDemoCard(response);
     if (request.method === "GET" && request.url === "/api/tasks") {
       return sendJson(response, 200, { tasks: await listTasks() });
     }
@@ -157,11 +167,11 @@ const server = createServer(async (request, response) => {
       return sendJson(response, 201, { task: await saveTask(task) });
     }
     if (request.method === "POST" && request.url === "/api/questions") return await handleQuestions(request, response);
-    if (request.method === "POST" && request.url === "/api/cards") return await handleCards(request, response);
+    if (request.method === "POST" && request.url === "/api/cards") return await handleCard(request, response);
     if (request.method === "GET") return await serveStatic(request, response);
     sendJson(response, 405, { error: "Метод не поддерживается" });
   } catch (error) {
-    const status = /JSON|большой/u.test(error.message) ? 400 : 500;
+    const status = /JSON|большой|описан|вопрос|ответ|карточк|идентификатор/u.test(error.message) ? 400 : 500;
     sendJson(response, status, { error: status === 400 ? error.message : "Внутренняя ошибка сервера" });
   }
 });

@@ -31,3 +31,40 @@ export const DEMO_QUESTION_INPUT = {
     "interactionFormat",
   ],
 };
+
+// Шаблон для AI-операции 2 повторяет реальный обмен данными:
+// операция 1 вернула вопросы с id и targetField, пользователь дал ответы.
+export const DEMO_CARD_INPUT = {
+  ...DEMO_QUESTION_INPUT,
+  questions: [
+    {
+      id: "question-1",
+      targetField: "users",
+      question: "Кто будет пользоваться решением и в какой ситуации?",
+    },
+    {
+      id: "question-2",
+      targetField: "expectedResult",
+      question: "Какой конкретный результат должна представить команда?",
+    },
+    {
+      id: "question-3",
+      targetField: "successCriteria",
+      question: "По каким измеримым признакам вы поймёте, что задача решена успешно?",
+    },
+  ],
+  answers: [
+    {
+      questionId: "question-1",
+      answer: "Покупатели магазина, которым нужна консультация по выбору товара.",
+    },
+    {
+      questionId: "question-2",
+      answer: "Работающий веб-прототип для запроса консультации и просмотра статуса обращения.",
+    },
+    {
+      questionId: "question-3",
+      answer: "Среднее время ожидания консультации должно сократиться минимум на 20 процентов.",
+    },
+  ],
+};

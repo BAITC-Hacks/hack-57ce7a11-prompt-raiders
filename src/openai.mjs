@@ -1,4 +1,5 @@
 import { CARD_FIELDS } from "./question-generator.mjs";
+import { CARD_OUTPUT_FIELDS } from "./card-generator.mjs";
 
 const API_URL = "https://api.openai.com/v1/responses";
 const cardFieldNames = Object.keys(CARD_FIELDS);
@@ -54,44 +55,40 @@ const questionsSchema = {
   additionalProperties: false,
 };
 
-const cardProperties = {
-  title: { type: "string" },
-  angle: { type: "string" },
-  pitch: { type: "string" },
-  audience: { type: "string" },
-  problem: { type: "string" },
-  features: {
-    type: "array",
-    minItems: 3,
-    maxItems: 3,
-    items: { type: "string" },
-  },
-  metric: { type: "string" },
-  constraints: { type: "string" },
-  tags: {
-    type: "array",
-    minItems: 2,
-    maxItems: 4,
-    items: { type: "string" },
-  },
-};
+const taskCardProperties = Object.fromEntries(
+  CARD_OUTPUT_FIELDS.map((field) => [field, { type: "string" }]),
+);
 
-const cardsSchema = {
+// Структура AI-операции 2 полностью совпадает с карточкой в models.mjs.
+// fieldSources нужны для автоматической проверки, что модель не выдумала факты.
+const taskCardSchema = {
   type: "object",
   properties: {
-    cards: {
+    card: {
+      type: "object",
+      properties: taskCardProperties,
+      required: CARD_OUTPUT_FIELDS,
+      additionalProperties: false,
+    },
+    fieldSources: {
       type: "array",
-      minItems: 3,
-      maxItems: 3,
       items: {
         type: "object",
-        properties: cardProperties,
-        required: Object.keys(cardProperties),
+        properties: {
+          field: { type: "string", enum: CARD_OUTPUT_FIELDS },
+          sourceType: {
+            type: "string",
+            enum: ["description", "industry", "knownField", "answer"],
+          },
+          sourceId: { type: "string" },
+          evidence: { type: "string" },
+        },
+        required: ["field", "sourceType", "sourceId", "evidence"],
         additionalProperties: false,
       },
     },
   },
-  required: ["cards"],
+  required: ["card", "fieldSources"],
   additionalProperties: false,
 };
 
@@ -159,20 +156,28 @@ export async function generateAiQuestions({ apiKey, model, input }) {
   return result;
 }
 
-export async function generateAiCards({ apiKey, model, task, questions, answers }) {
-  const interview = questions.map((question, index) => `${index + 1}. ${question}\nОтвет: ${answers[index]}`).join("\n\n");
-  const result = await structuredResponse({
+// AI-операция 2 получает уже проверенный контракт из card-generator.mjs.
+// Она возвращает одну карточку бизнес-задачи, а не варианты решения для команды.
+export async function generateAiTaskCard({ apiKey, model, input }) {
+  return structuredResponse({
     apiKey,
     model,
-    name: "hackathon_cards",
-    schema: cardsSchema,
+    name: "business_task_card",
+    schema: taskCardSchema,
     instructions: [
-      "Ты продуктовый эксперт хакатона. Создай ровно 3 существенно разные карточки решений на русском языке.",
-      "Карточка 1 — реалистичный быстрый MVP, карточка 2 — подход на данных или автоматизации, карточка 3 — дешёвый эксперимент для проверки самой рискованной гипотезы.",
-      "Строго опирайся на описание и ответы. Не выдумывай доступные данные, интеграции или числовые показатели.",
-      "Каждая карточка должна быть выполнима командой за хакатон. Пиши конкретно и кратко.",
+      "Ты формируешь одну редактируемую карточку бизнес-задачи на русском языке.",
+      "Используй только первоначальное описание, известные поля и ответы из входного JSON.",
+      "Не придумывай людей, данные, контакты, сроки, метрики, технологии или ограничения.",
+      "Если информации для поля нет, верни пустую строку.",
+      "originalDescription должен дословно совпадать с description, а topic — с industry.",
+      "Сформулируй короткое title без добавления новых фактов.",
+      "Карточка описывает потребность бизнеса, а не готовое решение студенческой команды.",
+      "Для каждого непустого поля, включая title и topic, добавь fieldSources.",
+      "evidence должна быть точной цитатой из соответствующего источника входного JSON.",
+      "sourceId для ответа — id вопроса, для известного поля — имя поля.",
+      "Не рассчитывай рейтинг, не назначай статус и не создавай идентификатор задачи.",
+      "Не добавляй текст вне заданного JSON-формата.",
     ].join(" "),
-    input: `Описание задачи:\n${task}\n\nИнтервью:\n${interview}`,
+    input: JSON.stringify(input),
   });
-  return result.cards;
 }
