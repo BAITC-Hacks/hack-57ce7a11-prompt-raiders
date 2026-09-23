@@ -10,7 +10,7 @@
 </head>
 <body>
   <header class="header wrap"><a class="brand" href="./" aria-label="AI Sana — главная"><span class="logo" aria-hidden="true">↗</span><span>AI Sana<small>CHALLENGE HUB</small></span></a><span class="header-caption">Бизнес и студенческие команды</span></header>
-  <main class="wrap home">
+  <main class="wrap home" id="home-screen">
     <p class="eyebrow">РЕАЛЬНЫЕ ЗАДАЧИ. СОВМЕСТНЫЕ РЕШЕНИЯ.</p>
     <h1>Идеям нужен бизнес.<br><em>Задачам — команда.</em></h1>
     <p class="intro">Бизнес делится задачами, команды предлагают решения.<br>Выберите, как вы хотите участвовать.</p>
@@ -31,6 +31,19 @@
     <div class="catalog-entry"><span>Хотите сначала посмотреть задачи?</span><a href="#catalog" data-role="guest">Открыть общий каталог <span aria-hidden="true">→</span></a><small>Все опубликованные задачи доступны без ограничений.</small></div>
     <p id="navigation-status" class="navigation-status" role="status" hidden></p>
   </main>
+  <main id="business-screen" class="wrap dashboard" hidden>
+    <a class="back-link" href="#">← Главная</a>
+    <div class="dashboard-heading"><div><p class="eyebrow">КАБИНЕТ БИЗНЕСА</p><h1 class="dashboard-title" tabindex="-1">Ваши задачи</h1><p class="dashboard-subtitle">Управляйте задачами и следите за предложениями команд.</p></div><a class="role-button business-button" href="#draft">+ Создать задачу</a></div>
+    <div class="stats"><div><span id="total-tasks">0</span><small>Всего задач</small></div><div><span id="published-tasks">0</span><small>Опубликовано</small></div><div><span id="total-responses">0</span><small>Откликов команд</small></div></div>
+    <div class="list-heading"><h2>Мои задачи</h2><button id="load-demo" class="outline-button">Загрузить демо-задачи</button></div>
+    <p class="data-note">Данные сохраняются в этом браузере. Демо-задачи отмечены отдельно.</p>
+    <div id="business-tasks" class="task-list"></div>
+  </main>
+  <main id="detail-screen" class="wrap dashboard" hidden>
+    <a class="back-link" href="#business">← Кабинет бизнеса</a>
+    <div id="detail-content"></div>
+  </main>
+  <div id="toast" class="toast" role="status" hidden></div>
   <footer class="wrap footer"><span>AI Sana Challenge Hub</span><span>Prompt Raiders · HackAlem</span></footer>
 </body>
 </html>
