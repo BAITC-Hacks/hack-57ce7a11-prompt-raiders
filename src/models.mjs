@@ -71,19 +71,15 @@ export function createProposal(input = {}) {
 }
 
 export function createRating(input = {}) {
-  const contextScore = score(input.contextScore, 20);
-  const dataScore = score(input.dataScore, 20);
-  const resultScore = score(input.resultScore, 15);
   return {
     id: randomUUID(),
     taskId: text(input.taskId, 80),
     total: score(input.total, 100),
     level: text(input.level, 100),
-    contextScore,
-    dataScore,
-    resultScore,
+    scores: input.scores && typeof input.scores === "object" ? { ...input.scores } : {},
     missingFields: textList(input.missingFields),
     recommendations: textList(input.recommendations),
+    source: input.source === "ai" ? "ai" : "local_stub",
     createdAt: new Date().toISOString(),
   };
 }
