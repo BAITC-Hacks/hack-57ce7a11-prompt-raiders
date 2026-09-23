@@ -23,6 +23,32 @@ export async function listRecords(collection) {
   }
 }
 
+export async function listTasks() {
+  return listRecords("tasks");
+}
+
+export async function findTaskById(id) {
+  return (await listTasks()).find((task) => task.id === id) ?? null;
+}
+
+export async function saveTask(task) {
+  return saveRecord("tasks", task);
+}
+
+export async function updateTask(id, updates) {
+  return updateRecord("tasks", id, updates);
+}
+
+export async function deleteTask(id) {
+  const file = files.tasks;
+  const tasks = await listTasks();
+  const remaining = tasks.filter((task) => task.id !== id);
+  if (remaining.length === tasks.length) return false;
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(remaining, null, 2)}\n`, "utf8");
+  return true;
+}
+
 export async function saveRecord(collection, record) {
   const file = files[collection];
   if (!file) throw new Error("Неизвестная коллекция");

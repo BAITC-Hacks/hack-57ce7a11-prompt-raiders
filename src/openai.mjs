@@ -1,5 +1,5 @@
 import { CARD_FIELDS } from "./question-generator.mjs";
-import { TASK_SCORE_MAX, TASK_SCORE_RUBRIC } from "./scoring.mjs";
+import { TASK_SCORE_MAX, TASK_SCORE_RUBRIC } from "./rating.mjs";
 
 const API_URL = "https://api.openai.com/v1/responses";
 const cardFieldNames = Object.keys(CARD_FIELDS);
@@ -101,10 +101,8 @@ const ratingSchema = {
   type: "object",
   properties: {
     scores: { type: "object", properties: ratingProperties, required: Object.keys(ratingProperties), additionalProperties: false },
-    missingFields: { type: "array", items: { type: "string", enum: TASK_SCORE_RUBRIC.map(({ field }) => field) } },
-    recommendations: { type: "array", items: { type: "string" } },
   },
-  required: ["scores", "missingFields", "recommendations"],
+  required: ["scores"],
   additionalProperties: false,
 };
 
@@ -203,7 +201,7 @@ export async function generateAiTaskRating({ apiKey, model, task }) {
       "Оцени качество карточки бизнес-задачи для хакатона по заданной шкале.",
       `Оцени каждое поле целым числом от 0 до его максимума. Сумма максимумов равна ${TASK_SCORE_MAX}; не возвращай общий балл, приложение посчитает его само.`,
       "Пустое поле получает 0. Частичное, расплывчатое или непроверяемое описание получает частичный балл. Не додумывай факты и доступные ресурсы.",
-      "Верни в missingFields поля, которые пусты или не содержат нужных сведений. Дай краткие конкретные рекомендации, как поднять оценку.",
+      "Верни только баллы по критериям. Приложение само вычислит общий балл, пропуски, уровень и рекомендации.",
       "Рубрика:\n" + rubric,
       "Ответ только по JSON-схеме.",
     ].join(" "),

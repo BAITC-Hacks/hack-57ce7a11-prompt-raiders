@@ -5,26 +5,26 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateLocalCards, normalizeText, validateAnswers } from "./src/generator.mjs";
 import { generateAiCards, generateAiQuestions, generateAiTaskRating } from "./src/openai.mjs";
-import { listRecords, saveRecord, updateRecord } from "./src/database.mjs";
+import {
+  deleteTask,
+  findTaskById,
+  listRecords,
+  listTasks,
+  saveRecord,
+  saveTask,
+  updateTask,
+} from "./src/database.mjs";
+import { createTask, TASK_STATUSES } from "./src/models.mjs";
 import {
   createClarifyingQuestion,
   createProposal,
-  createRating,
-  createTask,
   createTeam,
   PROPOSAL_STATUSES,
   QUESTION_SOURCES,
-  TASK_STATUSES,
-} from "./src/models.mjs";
+} from "./src/related-models.mjs";
 import { generateTemplateQuestions, prepareQuestionInput, validateAiQuestionResult } from "./src/question-generator.mjs";
 import { DEMO_QUESTION_INPUT } from "./src/demo-data.mjs";
-import {
-  normalizeRubricScores,
-  readinessForScore,
-  scoreTaskCompleteness,
-  totalRubricScore,
-  TASK_SCORE_RUBRIC,
-} from "./src/scoring.mjs";
+import { rateTask } from "./src/rating.mjs";
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
@@ -111,15 +111,9 @@ async function handleCards(request, response) {
   }
 }
 
-async function handleTaskRating(request, response) {
-  const body = await readJson(request);
-  const taskId = normalizeText(body.taskId, 80);
-  const tasks = await listRecords("tasks");
-  const task = tasks.find((item) => item.id === taskId);
-  if (!task) return sendJson(response, 404, { error: "Задача не найдена." });
-
+async function evaluateTask(task) {
+  let evaluation = null;
   let source = "ai";
-  let evaluation;
   if (apiKey) {
     try {
       evaluation = await generateAiTaskRating({ apiKey, model, task });
@@ -130,33 +124,34 @@ async function handleTaskRating(request, response) {
   } else {
     source = "local_stub";
   }
+  return { ...rateTask(task, evaluation?.scores), source };
+}
 
-  const scores = normalizeRubricScores(evaluation?.scores ?? scoreTaskCompleteness(task));
-  const total = totalRubricScore(scores);
-  const scoredFields = new Set(TASK_SCORE_RUBRIC.map(({ field }) => field));
-  const missingFields = Array.isArray(evaluation?.missingFields)
-    ? [...new Set(evaluation.missingFields.filter((field) => scoredFields.has(field)))]
-    : TASK_SCORE_RUBRIC.filter(({ field }) => !normalizeText(task[field])).map(({ field }) => field);
-  const recommendations = Array.isArray(evaluation?.recommendations)
-    ? evaluation.recommendations.map((item) => normalizeText(item, 500)).filter(Boolean).slice(0, 20)
-    : missingFields.map((field) => `Заполните поле «${TASK_SCORE_RUBRIC.find((item) => item.field === field).label}».`);
-  const rating = createRating({
-    taskId,
-    total,
-    level: readinessForScore(total),
-    scores,
-    missingFields,
-    recommendations,
-    source,
-  });
-  await saveRecord("ratings", rating);
-  await updateRecord("tasks", taskId, {
-    score: total,
-    readinessLevel: rating.level,
-    missingFields,
+async function persistTaskRating(task, rating) {
+  const record = {
+    id: randomUUID(),
+    taskId: task.id,
+    ...rating,
+    createdAt: new Date().toISOString(),
+  };
+  await saveRecord("ratings", record);
+  return record;
+}
+
+async function handleTaskRating(request, response) {
+  const body = await readJson(request);
+  const taskId = normalizeText(body.taskId, 80);
+  const task = await findTaskById(taskId);
+  if (!task) return sendJson(response, 404, { error: "Задача не найдена." });
+  const rating = await evaluateTask(task);
+  await updateTask(taskId, {
+    score: rating.score,
+    readinessLevel: rating.readinessLevel,
+    missingFields: rating.missingFields,
     updatedAt: new Date().toISOString(),
   });
-  return sendJson(response, 200, { rating, mode: source, maximum: 100 });
+  const record = await persistTaskRating(task, rating);
+  return sendJson(response, 200, { rating: record, mode: rating.source, maximum: 100 });
 }
 
 async function serveStatic(request, response) {
@@ -184,15 +179,22 @@ async function serveStatic(request, response) {
 const server = createServer(async (request, response) => {
   try {
     const getCollections = {
-      "/api/tasks": "tasks",
       "/api/clarifying-questions": "questions",
       "/api/teams": "teams",
       "/api/proposals": "proposals",
       "/api/ratings": "ratings",
     };
+    if (request.method === "GET" && request.url === "/api/tasks") {
+      return sendJson(response, 200, { tasks: await listTasks() });
+    }
     if (request.method === "GET" && getCollections[request.url]) {
       const collection = getCollections[request.url];
       return sendJson(response, 200, { [collection]: await listRecords(collection) });
+    }
+    const taskMatch = request.url.match(/^\/api\/tasks\/([^/]+)$/);
+    if (request.method === "GET" && taskMatch) {
+      const task = await findTaskById(decodeURIComponent(taskMatch[1]));
+      return task ? sendJson(response, 200, { task }) : sendJson(response, 404, { error: "Задача не найдена." });
     }
     if (request.method === "GET" && request.url === "/api/questions/demo") return handleDemoQuestions(response);
     if (request.method === "POST" && request.url === "/api/questions") return await handleQuestions(request, response);
@@ -204,7 +206,41 @@ const server = createServer(async (request, response) => {
       const task = createTask(body);
       if (!task.businessId || !task.title) return sendJson(response, 400, { error: "Укажите businessId и название задачи." });
       if (!TASK_STATUSES.includes(body.status ?? "draft")) return sendJson(response, 400, { error: "Статус должен быть draft, confirmed или published." });
-      return sendJson(response, 201, { task: await saveRecord("tasks", task) });
+      const rating = await evaluateTask(task);
+      const ratedTask = {
+        ...task,
+        score: rating.score,
+        readinessLevel: rating.readinessLevel,
+        missingFields: rating.missingFields,
+      };
+      await saveTask(ratedTask);
+      const ratingRecord = await persistTaskRating(ratedTask, rating);
+      return sendJson(response, 201, { task: ratedTask, rating: ratingRecord, mode: rating.source });
+    }
+    if (request.method === "PATCH" && taskMatch) {
+      const taskId = decodeURIComponent(taskMatch[1]);
+      const existing = await findTaskById(taskId);
+      if (!existing) return sendJson(response, 404, { error: "Задача не найдена." });
+      const body = await readJson(request);
+      if (body.status !== undefined && !TASK_STATUSES.includes(body.status)) {
+        return sendJson(response, 400, { error: "Статус должен быть draft, confirmed или published." });
+      }
+      const task = createTask(body, existing);
+      if (!task.businessId || !task.title) return sendJson(response, 400, { error: "Укажите businessId и название задачи." });
+      const rating = await evaluateTask(task);
+      const ratedTask = {
+        ...task,
+        score: rating.score,
+        readinessLevel: rating.readinessLevel,
+        missingFields: rating.missingFields,
+      };
+      await updateTask(taskId, ratedTask);
+      const ratingRecord = await persistTaskRating(ratedTask, rating);
+      return sendJson(response, 200, { task: ratedTask, rating: ratingRecord, mode: rating.source });
+    }
+    if (request.method === "DELETE" && taskMatch) {
+      const deleted = await deleteTask(decodeURIComponent(taskMatch[1]));
+      return deleted ? sendJson(response, 200, { deleted: true }) : sendJson(response, 404, { error: "Задача не найдена." });
     }
     if (request.method === "POST" && request.url === "/api/clarifying-questions") {
       const body = await readJson(request);
