@@ -1,4 +1,113 @@
 'use strict';
+const CARD_FIELDS = [
+ ['title','Название','Назовите задачу коротко и понятно.'],
+ ['context','Контекст','Опишите текущий процесс и ситуацию.'],
+ ['need','Потребность','Что нужно изменить и почему?'],
+ ['users','Пользователи','Кто будет пользоваться решением?'],
+ ['materials','Данные и материалы','Какие данные, примеры или источники доступны?'],
+ ['constraints','Ограничения','Сроки, технологии, доступы и другие границы.'],
+ ['outcome','Ожидаемый результат','Что именно должна подготовить команда?'],
+ ['success','Критерии успеха','Укажите проверяемые признаки принятия результата.'],
+ ['contact','Контакт','Email, ссылка HTTPS или телефон в международном формате.'],
+ ['interaction','Формат взаимодействия','Как будут проходить консультации и обратная связь?']
+];
+function cardOf(task) {
+ return Object.fromEntries(CARD_FIELDS.map(([key]) => [key,String(task.card?.[key] ?? (key === 'title' ? task.title : key === 'context' ? task.description : '') ?? '')]));
+}
+function contactValid(value) {
+ if (!value.trim()) return true;
+ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) || /^\+?[\d ()-]{7,25}$/.test(value) || validLink(value);
+}
+function validLink(value) { try { const u = new URL(value); return ['http:','https:'].includes(u.protocol) && Boolean(u.hostname) && !u.username && !u.password; } catch { return false; } }
+function cardErrors(card) {
+ const errors = [];
+ if (!card.title.trim()) errors.push(['title','Укажите название задачи.']);
+ if (card.title.length > 120) errors.push(['title','Название не должно превышать 120 символов.']);
+ if (!contactValid(card.contact)) errors.push(['contact','Укажите корректный email, ссылку http:// или https:// либо номер телефона.']);
+ for (const [key,label] of CARD_FIELDS) {
+  if (key !== 'contact' && /(?:https?:\/\/|www\.|[a-z]+:\/\/)/i.test(card[key])) {
+   const links = card[key].match(/(?:[a-z]+:\/\/|www\.)[^\s]+/gi) || [];
+   if (links.some(link => !validLink(link.replace(/[.,;!?]+$/, '')))) errors.push([key,`В поле «${label}» некорректная ссылка. Используйте полный адрес http:// или https://.`]);
+  }
+ }
+ return errors;
+}
+function rating(card) {
+ const filled = key => Boolean(card[key]?.trim()) && !/^(пока )?(неизвестно|не знаю|не указано|нет данных|уточнить|не определено)[.!]?$/i.test(card[key].trim());
+ const sections = [
+  ['Контекст и потребность',20,['context','need'],'Опишите текущую ситуацию и желаемое изменение.'],
+  ['Данные и материалы',20,['materials'],'Укажите доступные материалы или объясните, как их получить.'],
+  ['Ожидаемый результат',15,['outcome'],'Опишите конкретный результат работы команды.'],
+  ['Критерии успеха',15,['success'],'Добавьте измеримый показатель или проверяемое условие приёмки.'],
+  ['Ограничения',10,['constraints'],'Укажите сроки, технологии и ограничения доступа.'],
+  ['Пользователи',10,['users'],'Опишите, для кого создаётся решение.'],
+  ['Связь с бизнесом',10,['contact','interaction'],'Добавьте корректный контакт и порядок обратной связи.']
+ ].map(([label,max,keys,tip]) => ({label,max,keys,tip,points:keys.reduce((sum,key) => sum+(filled(key) && (key !== 'contact' || contactValid(card.contact)) ? max/keys.length : 0),0)}));
+ const score = sections.reduce((sum,item) => sum+item.points,0);
+ const level = score < 40 ? 'Черновик' : score < 70 ? 'Рабочая' : score < 90 ? 'Готовая' : 'Приоритетная';
+ return {score,level,sections,missing:CARD_FIELDS.filter(([key]) => key !== 'title' && (!filled(key) || key === 'contact' && !contactValid(card.contact))).map(([,label]) => label)};
+}
+function editor(task) {
+ const card = cardOf(task);
+ $('detail-content').innerHTML = `<div class="editor-heading"><p class="eyebrow">КАРТОЧКА ЗАДАЧИ</p><h1 class="responses-heading" tabindex="-1">Уточните задачу. Откройте возможности.</h1><p class="data-note">Заполните известные сведения и подтвердите карточку перед публикацией. Низкий рейтинг не ограничивает публикацию.</p></div><div class="card-workspace"><section class="edit-panel full-editor"><form id="card-form" novalidate>${CARD_FIELDS.map(([key,label,hint]) => `<label for="field-${key}">${label}${key === 'title' ? ' *' : ''}</label>${key === 'title' || key === 'contact' ? `<input id="field-${key}" maxlength="${key === 'title' ? 120 : 1000}" value="${esc(card[key])}" ${key === 'title' ? 'required' : ''} aria-describedby="hint-${key}">` : `<textarea id="field-${key}" maxlength="5000" rows="3" aria-describedby="hint-${key}">${esc(card[key])}</textarea>`}<p class="field-help" id="hint-${key}">${hint}</p>`).join('')}${task.clarifications?.length ? `<details class="draft-summary"><summary>Ответы на уточняющие вопросы</summary>${task.clarifications.map(item => `<p><strong>${esc(item.question)}</strong><br>${esc(item.answer)}</p>`).join('')}</details>` : ''}<p id="card-errors" class="form-error" role="alert"></p><div class="card-controls"><button type="button" class="outline-button" id="recalculate">Пересчитать</button><button type="button" class="outline-button" id="save-card">Сохранить черновик</button><button type="button" class="outline-button" id="confirm-card">Подтвердить карточку</button><button type="submit" class="role-button business-button">Опубликовать ↗</button></div><p id="version-status" class="data-note" role="status"></p></form></section><aside id="rating-panel" class="rating-panel"></aside></div>`;
+ const read = () => Object.fromEntries(CARD_FIELDS.map(([key]) => [key,$(`field-${key}`).value]));
+ const fingerprint = value => JSON.stringify(value);
+ const refresh = () => {
+  const current = read(), info = rating(current);
+  const confirmed = task.confirmedVersion === fingerprint(current);
+  $('version-status').textContent = confirmed ? 'Эта версия карточки подтверждена.' : 'Текущая версия не подтверждена. Перед публикацией нажмите «Подтвердить карточку».';
+  $('rating-panel').innerHTML = `<p class="eyebrow">РЕЙТИНГ ГОТОВНОСТИ</p><div class="rating-number">${info.score}<small>/ 100</small></div><span class="state-badge">${info.level}</span><p class="field-help">${confirmed ? 'Оценка подтверждённой версии' : 'Предварительная оценка текущих полей'}</p><progress max="100" value="${info.score}" aria-label="Рейтинг готовности"></progress><div class="rating-sections">${info.sections.map(s => `<div><span>${s.label}</span><strong>${s.points} / ${s.max}</strong></div>`).join('')}</div><h2>Недостающие сведения</h2>${info.missing.length ? `<ul>${info.missing.map(label => `<li>${label}</li>`).join('')}</ul>` : '<p>Все разделы заполнены.</p>'}<h2>Как улучшить карточку</h2><ul>${info.sections.filter(s => s.points < s.max).map(s => `<li>${s.tip}</li>`).join('') || '<li>Проверьте точность сведений и согласуйте условия приёмки.</li>'}</ul><p class="field-help">Баллы начисляются за заполненные разделы. Это оценка полноты, а не экспертная проверка содержания.</p>`;
+ };
+ const validate = () => {
+  const errors = cardErrors(read());
+  CARD_FIELDS.forEach(([key]) => $(`field-${key}`).removeAttribute('aria-invalid'));
+  $('card-errors').textContent = errors.map(([,message]) => message).join(' ');
+  errors.forEach(([key]) => $(`field-${key}`).setAttribute('aria-invalid','true'));
+  if(errors.length) $(`field-${errors[0][0]}`).focus();
+  return !errors.length;
+ };
+ const persistCard = mode => {
+  const current = read();
+  task.card = current; task.title = current.title; task.description = current.context;
+  task.score = rating(current).score;
+  task.status = mode;
+  if (mode === 'draft') task.confirmedVersion = null;
+  return save();
+ };
+ $('card-form').addEventListener('input',() => { $('card-errors').textContent = ''; refresh(); });
+ $('recalculate').addEventListener('click',() => { refresh(); toast('Рейтинг пересчитан по текущим полям.'); });
+ $('save-card').addEventListener('click',() => { if(!validate()) return; if(persistCard('draft')) toast('Черновик сохранён.'); refresh(); });
+ $('confirm-card').addEventListener('click',() => {
+  if(!validate()) return;
+  task.confirmedVersion = fingerprint(read());
+  task.confirmedSnapshot = {...read()};
+  if(persistCard('confirmed')) toast('Текущая версия карточки подтверждена.');
+  refresh();
+ });
+ $('card-form').addEventListener('submit',event => {
+  event.preventDefault(); if(!validate()) return;
+  if(task.confirmedVersion !== fingerprint(read())) { $('card-errors').textContent = 'Подтвердите текущую версию карточки перед публикацией.'; $('confirm-card').focus(); return; }
+  task.publishedCard = {...read()}; task.publishedScore = rating(read()).score; task.publishedAt = new Date().toISOString();
+  const saved = persistCard('published');
+  location.hash = `task/${encodeURIComponent(task.id)}`;
+  if(saved) toast('Задача опубликована и доступна в общем каталоге.');
+ });
+ refresh();
+}
+function publishedTasks() { return tasks.filter(t => t.publishedCard || t.status === 'published'); }
+function renderCatalog() {
+ const published = publishedTasks().sort((a,b) => (b.publishedScore ?? b.score ?? 0)-(a.publishedScore ?? a.score ?? 0));
+ $('detail-content').innerHTML = `<p class="eyebrow">ОТКРЫТЫЙ КАТАЛОГ</p><h1 class="responses-heading" tabindex="-1">Задачи бизнеса</h1><p class="data-note">Все опубликованные задачи, включая задачи с низким рейтингом. Сначала — самый высокий балл.</p><div class="task-list">${published.map(task => {const card = task.publishedCard || cardOf(task),score = task.publishedScore ?? task.score ?? 0; return `<article class="task-item"><span class="state-badge published">Опубликована · ${score}/100</span><h3>${esc(card.title)}</h3><p>${esc(card.context)}</p><a class="small-button" href="#task/${encodeURIComponent(task.id)}">Открыть задачу →</a></article>`;}).join('') || empty('Опубликованных задач пока нет','Подтвердите карточку и опубликуйте её из редактора.')}</div>`;
+}
+function renderPublished(rawId) {
+ let id; try {id = decodeURIComponent(rawId || '');} catch {id = '';}
+ const task = publishedTasks().find(t => t.id === id);
+ if(!task) { $('detail-content').innerHTML = empty('Задача не опубликована','Вернитесь в кабинет или откройте общий каталог.'); return; }
+ const card = task.publishedCard || cardOf(task);
+ $('detail-content').innerHTML = `<a class="back-link" href="#catalog">← Общий каталог</a><section class="edit-panel"><p class="eyebrow">ОПУБЛИКОВАННАЯ ЗАДАЧА</p><h1 class="responses-heading" tabindex="-1">${esc(card.title)}</h1><p class="state-badge published">Рейтинг: ${task.publishedScore ?? task.score ?? 0}/100</p>${CARD_FIELDS.filter(([key]) => key !== 'title').map(([key,label]) => `<h2 class="published-label">${label}</h2><p class="published-value">${esc(card[key]) || 'Пока не указано'}</p>`).join('')}<a class="small-button" href="#edit/${encodeURIComponent(task.id)}">Редактировать карточку</a></section>`;
+}
+
+'use strict';
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const KEY = 'ai-sana-business-dashboard-v1';
@@ -17,33 +126,20 @@ function renderBusiness() {
   $('load-demo').textContent = tasks.some(t => t.demo) ? 'Демо-задачи загружены' : 'Загрузить демо-задачи';
   $('business-tasks').innerHTML = tasks.length ? tasks.map(t => `<article class="task-item"><div class="task-top"><span class="state-badge ${t.status}">${statusLabels[t.status]}</span>${t.demo ? '<span class="demo-tag">ДЕМО-ПРИМЕР</span>' : ''}</div><h3>${esc(t.title)}</h3><p>${esc(t.description)}</p><div class="task-meta"><span>Рейтинг: <strong>${Number.isFinite(t.score) ? `${t.score}/100` : 'ещё не рассчитан'}</strong></span><span>Откликов: <strong>${t.responses.length}</strong></span></div><div class="task-actions"><a class="small-button" href="#edit/${encodeURIComponent(t.id)}">Редактировать</a><a class="small-button" href="#responses/${encodeURIComponent(t.id)}">Посмотреть отклики (${t.responses.length})</a></div></article>`).join('') : `${empty('Пока нет задач','Создайте первый черновик или загрузите демо-примеры, чтобы посмотреть кабинет.')}<p><a class="small-button" href="#draft">+ Создать задачу</a></p>`;
 }
-function editor(task) {
-  const edit = Boolean(task);
-  $('detail-content').innerHTML = `<section class="edit-panel"><p class="eyebrow">${edit ? 'РЕДАКТИРОВАНИЕ КАРТОЧКИ' : 'НОВАЯ ЗАДАЧА'}</p><h1 tabindex="-1">${edit ? 'Редактор карточки' : 'Введите черновик'}</h1><p class="data-note">${edit ? 'После изменения задача вернётся в черновики для повторного подтверждения и расчёта рейтинга.' : 'Опишите задачу своими словами. Сохранённый черновик появится в кабинете бизнеса.'}</p><form id="task-form" novalidate><label for="task-title">Название задачи</label><input id="task-title" maxlength="120" value="${esc(task?.title || '')}" required><label for="task-description">Описание задачи</label><textarea id="task-description" rows="6" maxlength="5000" required>${esc(task?.description || '')}</textarea>${task?.topic ? `<label for="card-topic">Тема или отрасль</label><input id="card-topic" maxlength="100" value="${esc(task.topic)}">` : ''}${task?.clarifications?.length ? `<h2 class="answers-heading">Уточнения для карточки</h2>${task.clarifications.map((item,i) => `<label for="card-answer-${i}">${esc(item.question)}</label><textarea id="card-answer-${i}" rows="3" maxlength="2000">${esc(item.answer)}</textarea>`).join('')}` : ''}<p class="form-error" id="task-error" role="alert"></p><button class="role-button business-button" type="submit">${edit ? 'Сохранить изменения' : 'Сохранить черновик'} <span>→</span></button></form></section>`;
-  $('task-form').addEventListener('submit',event => {
-    event.preventDefault();
-    const title = $('task-title').value.trim(), description = $('task-description').value.trim();
-    if (!title || !description) { $('task-error').textContent = 'Заполните название и описание задачи.'; (!title ? $('task-title') : $('task-description')).focus(); return; }
-    if (edit) {
-      const topic = $('card-topic') ? $('card-topic').value.trim() : task.topic;
-      const clarifications = task.clarifications?.map((item,i) => ({question:item.question,answer:$(`card-answer-${i}`).value.trim()}));
-      if (title !== task.title || description !== task.description || topic !== task.topic || JSON.stringify(clarifications) !== JSON.stringify(task.clarifications)) Object.assign(task,{title,description,topic,clarifications,status:'draft',score:null});
-    } else tasks.unshift({id: Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8),title,description,status:'draft',score:null,responses:[]});
-    const saved = save(); location.hash = 'business'; if (saved) toast(edit ? 'Изменения сохранены.' : 'Черновик создан.');
-  });
-}
 function responses(task) {
   $('detail-content').innerHTML = `<p class="eyebrow">ПРЕДЛОЖЕНИЯ КОМАНД</p><h1 class="responses-heading" tabindex="-1">Отклики на задачу</h1><p class="dashboard-subtitle">${esc(task.title)}</p>${task.responses.length ? `<div class="task-list">${task.responses.map(r => `<article class="task-item"><span class="demo-tag">${task.demo ? 'ДЕМО-ПРИМЕР' : 'ПРЕДЛОЖЕНИЕ'}</span><h3>${esc(r.team)}</h3><p><strong>Идея решения</strong><br>${esc(r.idea)}</p><p><strong>План реализации</strong><br>${esc(r.plan)}</p></article>`).join('')}</div>` : empty('Откликов пока нет','Когда команды отправят предложения, они появятся здесь.')}`;
 }
 function route(focus = true) {
   cancelAnalysis();
   const [name,rawId] = location.hash.slice(1).split('/');
-  $('home-screen').hidden = Boolean(name && name !== 'catalog');
+  $('home-screen').hidden = Boolean(name);
   $('business-screen').hidden = name !== 'business';
-  $('detail-screen').hidden = !['draft','edit','responses'].includes(name);
-  $('navigation-status').hidden = name !== 'catalog';
+  $('detail-screen').hidden = !['draft','edit','responses','catalog','task'].includes(name);
+  $('navigation-status').hidden = true;
   $('navigation-status').textContent = 'Общий каталог ещё не подключён.';
-  if (name === 'business') renderBusiness();
+  if (name === 'catalog') renderCatalog();
+  else if (name === 'task') renderPublished(rawId);
+  else if (name === 'business') renderBusiness();
   else if (name === 'draft') renderDraft();
   else if (name === 'edit' || name === 'responses') {
     let taskId; try { taskId = decodeURIComponent(rawId || ''); } catch { taskId = ''; }
@@ -51,7 +147,7 @@ function route(focus = true) {
     if (!task) $('detail-content').innerHTML = empty('Задача не найдена','Вернитесь в кабинет и выберите задачу из списка.');
     else if (name === 'edit') editor(task); else responses(task);
   } else if (name !== 'catalog') $('home-screen').hidden = false;
-  document.title = name === 'business' ? 'Кабинет бизнеса — AI Sana' : name === 'draft' ? 'Новый черновик — AI Sana' : name === 'edit' ? 'Редактор задачи — AI Sana' : name === 'responses' ? 'Отклики — AI Sana' : 'AI Sana — выберите роль';
+  document.title = name === 'catalog' ? 'Каталог задач — AI Sana' : name === 'task' ? 'Опубликованная задача — AI Sana' : name === 'business' ? 'Кабинет бизнеса — AI Sana' : name === 'draft' ? 'Новый черновик — AI Sana' : name === 'edit' ? 'Редактор задачи — AI Sana' : name === 'responses' ? 'Отклики — AI Sana' : 'AI Sana — выберите роль';
   if (focus) { const heading = document.querySelector('main:not([hidden]) h1'); if (heading) { heading.setAttribute('tabindex','-1'); heading.focus(); } }
 }
 $('load-demo').addEventListener('click',() => {
