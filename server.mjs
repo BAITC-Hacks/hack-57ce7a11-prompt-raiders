@@ -8,17 +8,14 @@ import {
   validateAnswers,
 } from "./src/generator.mjs";
 import { generateAiCards, generateAiQuestions } from "./src/openai.mjs";
-<<<<<<< HEAD
 import { DEMO_QUESTION_INPUT } from "./src/demo-data.mjs";
 import {
   generateTemplateQuestions,
   prepareQuestionInput,
   validateAiQuestionResult,
 } from "./src/question-generator.mjs";
-=======
 import { listTasks, saveTask } from "./src/database.mjs";
 import { createTask, TASK_STATUSES } from "./src/models.mjs";
->>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65
 
 // Статические файлы проекта сейчас лежат в корне репозитория.
 const root = fileURLToPath(new URL("./", import.meta.url));
@@ -148,9 +145,7 @@ async function serveStatic(request, response) {
 
 const server = createServer(async (request, response) => {
   try {
-<<<<<<< HEAD
     if (request.method === "GET" && request.url === "/api/questions/demo") return handleDemoQuestions(response);
-=======
     if (request.method === "GET" && request.url === "/api/tasks") {
       return sendJson(response, 200, { tasks: await listTasks() });
     }
@@ -161,7 +156,6 @@ const server = createServer(async (request, response) => {
       if (!TASK_STATUSES.includes(body.status ?? "draft")) return sendJson(response, 400, { error: "Статус должен быть draft, confirmed или published." });
       return sendJson(response, 201, { task: await saveTask(task) });
     }
->>>>>>> 7d8b7457545e75622025b65048a3e100afd37a65
     if (request.method === "POST" && request.url === "/api/questions") return await handleQuestions(request, response);
     if (request.method === "POST" && request.url === "/api/cards") return await handleCards(request, response);
     if (request.method === "GET") return await serveStatic(request, response);
