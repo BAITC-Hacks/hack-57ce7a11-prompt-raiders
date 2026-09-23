@@ -9,6 +9,8 @@ import {
   validateAnswers,
 } from "./src/generator.mjs";
 import { generateAiCards, generateAiQuestions } from "./src/openai.mjs";
+import { listTasks, saveTask } from "./src/database.mjs";
+import { createTask, TASK_STATUSES } from "./src/models.mjs";
 
 const root = fileURLToPath(new URL("./public/", import.meta.url));
 const port = Number.parseInt(process.env.PORT ?? "3000", 10);
@@ -116,6 +118,16 @@ async function serveStatic(request, response) {
 
 const server = createServer(async (request, response) => {
   try {
+    if (request.method === "GET" && request.url === "/api/tasks") {
+      return sendJson(response, 200, { tasks: await listTasks() });
+    }
+    if (request.method === "POST" && request.url === "/api/tasks") {
+      const body = await readJson(request);
+      const task = createTask(body);
+      if (!task.businessId || !task.title) return sendJson(response, 400, { error: "Укажите businessId и название задачи." });
+      if (!TASK_STATUSES.includes(body.status ?? "draft")) return sendJson(response, 400, { error: "Статус должен быть draft, confirmed или published." });
+      return sendJson(response, 201, { task: await saveTask(task) });
+    }
     if (request.method === "POST" && request.url === "/api/questions") return await handleQuestions(request, response);
     if (request.method === "POST" && request.url === "/api/cards") return await handleCards(request, response);
     if (request.method === "GET") return await serveStatic(request, response);
