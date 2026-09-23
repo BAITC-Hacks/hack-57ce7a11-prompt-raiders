@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # hack-57ce7a11-prompt-raiders
 Hackathon team repository for Prompt Raiders
 
@@ -6,3 +7,25 @@ Hackathon team repository for Prompt Raiders
 Сейчас реализована только модель задачи. Записи хранятся в `data/tasks.json` (файл создаётся при первой записи). Поля: `id`, `businessId`, `status`, `title`, `topic`, `originalDescription`, `context`, `need`, `users`, `data`, `constraints`, `expectedResult`, `successCriteria`, `contact`, `interactionFormat`, `score`, `readinessLevel`, `missingFields`, `createdAt`, `updatedAt`.
 
 `GET /api/tasks` возвращает задачи, `POST /api/tasks` создаёт задачу. Для создания обязательны `businessId` и `title`. `businessId` хранится как ссылка-идентификатор, отдельная модель бизнеса пока не реализована. Статусы: `draft`, `confirmed`, `published`; уровни готовности: `draft`, `in_progress`, `ready`, `priority`; оценка ограничивается диапазоном 0–100.
+=======
+# AI Sana — главная и выбор роли
+
+Реализован только экран 1 из предоставленного изображения.
+
+- «Я представитель бизнеса» → `#business` (кабинет бизнеса).
+- «Я участник команды» → `#catalog` (каталог).
+- «Открыть общий каталог» → `#catalog` (тот же каталог, без ограничений).
+
+Следующие экраны не созданы. При нажатии меняется маршрут и появляется честное сообщение, что раздел ещё не подключён. Для интеграции роутер может подписаться на событие `app:navigate`: `event.detail` содержит `{ role, route }`. Для просмотра каталога не требуется авторизация.
+
+## Запуск
+
+Откройте `index.html` в браузере. Страница не требует сборки, API или установки зависимостей. Шрифт загружается из Google Fonts; без сети используется системный.
+
+- `index.html` — главная, две кнопки выбора роли и ссылка на каталог.
+- `styles.css` — оформление.
+- `app.js` — маршруты и событие для будущего подключения экранов.
+- `previous-prototype/` — ранее сохранённый прототип, не подключён к главной.
+
+В `package.json` есть незавершённый конфликт слияния frontend/backend; он не разрешался в рамках этой задачи. До его разрешения используйте прямое открытие HTML. Backend-файлы не изменялись.
+>>>>>>> 434bdf16a927b2fd6a200c1b5b9b9b3539e74b74

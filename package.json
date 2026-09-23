@@ -1,4 +1,11 @@
 {
+<<<<<<< HEAD
+  "name": "ai-sana-challenge-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Задачи бизнеса и решения студенческих команд",
+  "scripts": { "start": "node server.js", "check": "node --check app.js && node --check server.js" }
+=======
   "name": "hackathon-brief-cards",
   "version": "1.0.0",
   "private": true,
@@ -11,4 +18,5 @@
   "engines": {
     "node": ">=20"
   }
+>>>>>>> a136a2bccf35c4499c76c9e7cc2f5fa282572da2
 }

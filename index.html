@@ -2,60 +2,35 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#f5f4ef">
-  <meta name="description" content="Три вопроса о вашем бизнесе — и понятный план следующего шага.">
-  <title>Точка роста — план для вашего бизнеса</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6f1">
+  <title>AI Sana — выберите роль</title>
   <link rel="stylesheet" href="styles.css">
   <script src="app.js" defer></script>
 </head>
 <body>
-  <header class="header container">
-    <a class="brand" href="./" aria-label="Точка роста — главная"><span class="brand-icon">↗</span> точка роста<span class="brand-dot">.</span></a>
-    <nav aria-label="Навигация"><a href="#how">Как это работает</a><a href="#questionnaire" class="nav-button">Разобрать мой бизнес <span>↗</span></a></nav>
-  </header>
-  <main class="container">
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <p class="eyebrow"><span class="live-dot"></span> МАЛЕНЬКИЙ ШАГ. БОЛЬШИЕ ПЕРЕМЕНЫ.</p>
-        <h1 id="hero-title">Ваш бизнес.<br>Три вопроса.<br><span class="serif">Новая точка роста.</span></h1>
-        <p class="hero-description">Когда задач много, сложно выбрать главное.<br class="desktop"> Расскажите о своём деле — найдём, с чего начать.</p>
-        <a class="primary hero-cta" href="#questionnaire">Найти точку роста <span>↗</span></a>
-        <div class="hero-meta"><span>◷ &nbsp; Около 2 минут</span><span>Без регистрации</span></div>
-      </div>
-      <div class="growth-art" aria-label="Иллюстрация роста: от идеи к следующему шагу" role="img">
-        <div class="art-top"><span>У КАЖДОГО БИЗНЕСА ЕСТЬ</span><span>↗</span></div>
-        <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
-        <div class="art-label label-start"><span class="tiny-dot"></span> Вы здесь</div>
-        <svg class="growth-line" viewBox="0 0 480 390" fill="none" aria-hidden="true"><path d="M48 305C145 305 83 218 202 218S260 119 382  ninety" stroke="none"/><path d="M50 303C145 303 97 230 196 230C303 230 262 111 401 100" stroke="#234e40" stroke-width="3" stroke-dasharray="6 7"/><path d="m380 81 23 18-19 23" stroke="#234e40" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <div class="step-block block-one"><span>01</span></div><div class="step-block block-two"><span>02</span></div><div class="step-block block-three"><span>03</span><span class="block-star">✳</span></div>
-        <div class="art-label label-finish">Следующий уровень <span>↗</span></div>
-        <div class="art-bottom">пространство для роста<span>© 2026</span></div>
-      </div>
-    </section>
-    <section id="how" class="how" aria-label="Как это работает">
-      <div><span class="how-number">01</span><p><strong>Расскажите о себе</strong><span>Ниша и этап вашего бизнеса</span></p></div>
-      <div><span class="how-number">02</span><p><strong>Выберите главное</strong><span>Задача, которую хочется решить</span></p></div>
-      <div><span class="how-number">03</span><p><strong>Получите направление</strong><span>Конкретные шаги для старта</span></p></div>
-    </section>
-    <section class="workspace" id="questionnaire" aria-labelledby="form-title">
-      <aside class="workspace-intro"><p class="eyebrow">ДАВАЙТЕ ЗНАКОМИТЬСЯ</p><h2 id="form-title">Хороший план<br>начинается<br><span class="serif">с правильных вопросов.</span></h2><p>Не нужно готовить презентацию.<br>Достаточно того, что вы уже знаете<br>о своём бизнесе.</p><div class="privacy"><span>⌁</span><p>Ваши ответы остаются в этом браузере.<br>Вы можете удалить их в любой момент.</p></div></aside>
-      <div class="question-card">
-        <div id="form-view">
-          <div class="progress-heading"><span id="step-caption">ВОПРОС 01 / 03</span><span id="step-topic">О вашем бизнесе</span></div>
-          <div class="progress-track" aria-hidden="true"><span class="active"></span><span></span><span></span></div>
-          <form id="business-form" novalidate>
-            <div id="step-content"></div>
-            <p id="form-error" class="error" role="alert"></p>
-            <div class="form-actions"><button type="button" id="back-button" class="text-button" hidden>← Назад</button><span id="first-step-note">Начнём с самого важного</span><button type="submit" class="primary" id="next-button">Продолжить <span>→</span></button></div>
-          </form>
-        </div>
-        <div id="result-view" hidden></div>
-      </div>
-    </section>
-    <div class="closing"><span>✳</span><p>Не обязательно видеть весь путь.<br><strong>Достаточно знать следующий шаг.</strong></p></div>
+  <header class="header wrap"><a class="brand" href="./" aria-label="AI Sana — главная"><span class="logo" aria-hidden="true">↗</span><span>AI Sana<small>CHALLENGE HUB</small></span></a><span class="header-caption">Бизнес и студенческие команды</span></header>
+  <main class="wrap home">
+    <p class="eyebrow">РЕАЛЬНЫЕ ЗАДАЧИ. СОВМЕСТНЫЕ РЕШЕНИЯ.</p>
+    <h1>Идеям нужен бизнес.<br><em>Задачам — команда.</em></h1>
+    <p class="intro">Бизнес делится задачами, команды предлагают решения.<br>Выберите, как вы хотите участвовать.</p>
+    <div class="role-grid" aria-label="Выбор роли">
+      <section class="role-card business-card" aria-labelledby="business-title">
+        <div class="card-top"><span class="role-icon" aria-hidden="true">▦</span><span class="card-number">01 / БИЗНЕС</span></div>
+        <h2 id="business-title">Найдите команду<br>для вашей задачи</h2>
+        <p>Расскажите о потребности бизнеса, опубликуйте задачу и выберите подходящее предложение.</p>
+        <a class="role-button business-button" href="#business" data-role="business">Я представитель бизнеса <span aria-hidden="true">↗</span></a>
+      </section>
+      <section class="role-card team-card" aria-labelledby="team-title">
+        <div class="card-top"><span class="role-icon" aria-hidden="true">✳</span><span class="card-number">02 / КОМАНДА</span></div>
+        <h2 id="team-title">Примените навыки<br>на реальной задаче</h2>
+        <p>Исследуйте задачи бизнеса, предложите свою идею и создайте решение вместе с командой.</p>
+        <a class="role-button team-button" href="#catalog" data-role="team">Я участник команды <span aria-hidden="true">↗</span></a>
+      </section>
+    </div>
+    <div class="catalog-entry"><span>Хотите сначала посмотреть задачи?</span><a href="#catalog" data-role="guest">Открыть общий каталог <span aria-hidden="true">→</span></a><small>Все опубликованные задачи доступны без ограничений.</small></div>
+    <p id="navigation-status" class="navigation-status" role="status" hidden></p>
   </main>
-  <footer class="container footer"><a class="brand" href="./"><span class="brand-icon">↗</span> точка роста.</a><span>Помогаем двигаться от вопросов к действиям.</span><button class="text-button" id="clear-data">Удалить мои ответы</button></footer>
-  <div id="toast" class="toast" role="status" hidden></div>
+  <footer class="wrap footer"><span>AI Sana Challenge Hub</span><span>Prompt Raiders · HackAlem</span></footer>
 </body>
 </html>
